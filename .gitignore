@@ -5,3 +5,9 @@ front_end_description.txt
 
 # Ignore icon source file
 icon.pxd
+
+# Ignore Claude Code settings
+.claude/
+
+# Ignore Xcode user-specific settings
+xcuserdata/
