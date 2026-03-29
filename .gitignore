@@ -1,16 +1,7 @@
-# Ignore everything by default
-*
+# Ignore description files
+app_description.txt
+backend_description.txt
+front_end_description.txt
 
-# Allow these directories and their contents
-!backend/
-!backend/**
-!frontend/
-!frontend/**
-
-# Allow these icon files
-!icon_clear.png
-!icon_dark.png
-!icon_light.png
-
-# Don't ignore .gitignore itself
-!.gitignore
+# Ignore icon source file
+icon.pxd
