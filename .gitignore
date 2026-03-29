@@ -1,0 +1,16 @@
+# Ignore everything by default
+*
+
+# Allow these directories and their contents
+!backend/
+!backend/**
+!frontend/
+!frontend/**
+
+# Allow these icon files
+!icon_clear.png
+!icon_dark.png
+!icon_light.png
+
+# Don't ignore .gitignore itself
+!.gitignore
