@@ -31,3 +31,12 @@ class Settings(BaseSettings):
 
 # Global settings instance
 settings = Settings()
+
+# Debug logging for Railway deployment
+import os
+print("=" * 80)
+print("ENVIRONMENT VARIABLE CHECK:")
+print(f"DATABASE_URL from env: {os.environ.get('DATABASE_URL', 'NOT SET')}")
+print(f"DATABASE_URL in settings: {settings.DATABASE_URL}")
+print(f"OPENAI_API_KEY set: {'Yes' if settings.OPENAI_API_KEY != 'sk-test-key' else 'No (using default)'}")
+print("=" * 80)
