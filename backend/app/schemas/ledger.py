@@ -3,7 +3,7 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
 from uuid import UUID
-from typing import Union
+from typing import Union, Optional
 
 
 class MakeSpendingRequest(BaseModel):
@@ -12,7 +12,7 @@ class MakeSpendingRequest(BaseModel):
     currency: str = Field(max_length=3)
     budget_emoji: str = Field(max_length=10)
     description_text: Union[str, None] = None
-    datetime: Union[datetime, None] = None
+    datetime: Optional[datetime] = None
 
 
 class MakeSpendingResponse(BaseModel):
