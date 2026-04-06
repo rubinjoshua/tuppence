@@ -27,21 +27,23 @@ struct NavigationBar: View {
 
     @Environment(\.colorScheme) var colorScheme
 
-    // The longest possible heading is "Analysis of this month's [emoji] spendings"
-    // We calculate a font size so that this fills the screen width
+    // The longest line when split is "Analysis of this month's"
+    // We calculate a font size so that this longest line spans almost the full screen width
     private func headingFontSize(for screenWidth: CGFloat) -> CGFloat {
-        let longestHeading = "Analysis of this month's \u{1F4B0} spendings"
+        // Measure the first line which is the longest: "Analysis of this month's"
+        let longestLine = "Analysis of this month's"
         let padding: CGFloat = Theme.Layout.screenPadding * 2
-        let availableWidth = screenWidth - padding
+        // Target 95% of available width - almost the full screen, just a bit shy
+        let targetWidth = (screenWidth - padding) * 0.95
 
-        // Use a temporary UIFont to measure the longest heading
-        // Styrene-like = system light sans-serif
-        var testSize: CGFloat = 30
-        while testSize > 8 {
+        // Use a temporary UIFont to measure the longest line
+        // Start from an even larger size for maximum prominence
+        var testSize: CGFloat = 150
+        while testSize > 12 {
             let font = UIFont.systemFont(ofSize: testSize, weight: .light)
             let attributes: [NSAttributedString.Key: Any] = [.font: font]
-            let size = (longestHeading as NSString).size(withAttributes: attributes)
-            if size.width <= availableWidth {
+            let size = (longestLine as NSString).size(withAttributes: attributes)
+            if size.width <= targetWidth {
                 return testSize
             }
             testSize -= 0.5
@@ -52,6 +54,7 @@ struct NavigationBar: View {
     var body: some View {
         GeometryReader { geometry in
             let fontSize = headingFontSize(for: geometry.size.width)
+            let _ = print("🔤 Calculated fontSize: \(fontSize) for width: \(geometry.size.width)")
 
             VStack {
                 Spacer()
@@ -67,7 +70,7 @@ struct NavigationBar: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 60)
+                .frame(height: 140) // Increased to accommodate larger font and 2 lines
                 .animation(.easeInOut(duration: 0.3), value: currentPage)
                 .padding(.bottom, 20)
                 .padding(.horizontal, Theme.Layout.screenPadding)
@@ -78,41 +81,47 @@ struct NavigationBar: View {
     // MARK: - Amount: "[Amount] in [total]"
     @ViewBuilder
     private func amountHeading(fontSize: CGFloat) -> some View {
-        HStack(spacing: 0) {
-            Spacer()
-
-            ScrollableText(
-                options: Page.allCases.map { $0.rawValue },
-                selectedIndex: Binding(
-                    get: { Page.allCases.firstIndex(of: currentPage) ?? 0 },
-                    set: { currentPage = Page.allCases[$0] }
-                ),
-                fontSize: fontSize
-            )
-            .fixedSize()
-
-            Text(" in ")
-                .font(Theme.Fonts.heading(size: fontSize))
-                .foregroundColor(Theme.headingColor(for: colorScheme))
-                .shadow(
-                    color: Theme.shadowColor(for: colorScheme).opacity(0.3),
-                    radius: Theme.Layout.shadowRadius,
-                    x: Theme.Layout.shadowX,
-                    y: Theme.Layout.shadowY
+        VStack(spacing: 4) {
+            // Line 1: "Amount in"
+            HStack(spacing: 0) {
+                ScrollableText(
+                    options: Page.allCases.map { $0.rawValue },
+                    selectedIndex: Binding(
+                        get: { Page.allCases.firstIndex(of: currentPage) ?? 0 },
+                        set: { currentPage = Page.allCases[$0] }
+                    ),
+                    fontSize: fontSize
                 )
+                .fixedSize()
 
-            ScrollableText(
-                options: AmountDisplay.allCases.map { $0.rawValue },
-                selectedIndex: Binding(
-                    get: { AmountDisplay.allCases.firstIndex(of: amountDisplay) ?? 0 },
-                    set: { amountDisplay = AmountDisplay.allCases[$0] }
-                ),
-                fontSize: fontSize
-            )
-            .fixedSize()
+                Text(" in")
+                    .font(Theme.Fonts.heading(size: fontSize))
+                    .foregroundColor(Theme.headingColor(for: colorScheme))
+                    .shadow(
+                        color: Theme.shadowColor(for: colorScheme).opacity(0.3),
+                        radius: Theme.Layout.shadowRadius,
+                        x: Theme.Layout.shadowX,
+                        y: Theme.Layout.shadowY
+                    )
+                    .fixedSize()
+            }
+            .frame(maxWidth: .infinity)
 
-            Spacer()
+            // Line 2: "total" or "percentage of budgets"
+            HStack(spacing: 0) {
+                ScrollableText(
+                    options: AmountDisplay.allCases.map { $0.rawValue },
+                    selectedIndex: Binding(
+                        get: { AmountDisplay.allCases.firstIndex(of: amountDisplay) ?? 0 },
+                        set: { amountDisplay = AmountDisplay.allCases[$0] }
+                    ),
+                    fontSize: fontSize
+                )
+                .fixedSize()
+            }
+            .frame(maxWidth: .infinity)
         }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Analysis: "[Analysis] of [this month]'s [emoji] spendings"
@@ -120,65 +129,73 @@ struct NavigationBar: View {
     private func analysisHeading(fontSize: CGFloat) -> some View {
         let monthNames = ["this month"] + months.dropLast().map { $0.monthName }
 
-        HStack(spacing: 0) {
-            Spacer()
-
-            ScrollableText(
-                options: Page.allCases.map { $0.rawValue },
-                selectedIndex: Binding(
-                    get: { Page.allCases.firstIndex(of: currentPage) ?? 0 },
-                    set: { currentPage = Page.allCases[$0] }
-                ),
-                fontSize: fontSize
-            )
-            .fixedSize()
-
-            Text(" of ")
-                .font(Theme.Fonts.heading(size: fontSize))
-                .foregroundColor(Theme.headingColor(for: colorScheme))
-                .shadow(
-                    color: Theme.shadowColor(for: colorScheme).opacity(0.3),
-                    radius: Theme.Layout.shadowRadius,
-                    x: Theme.Layout.shadowX,
-                    y: Theme.Layout.shadowY
+        VStack(spacing: 4) {
+            // Line 1: "Analysis of this month's"
+            HStack(spacing: 0) {
+                ScrollableText(
+                    options: Page.allCases.map { $0.rawValue },
+                    selectedIndex: Binding(
+                        get: { Page.allCases.firstIndex(of: currentPage) ?? 0 },
+                        set: { currentPage = Page.allCases[$0] }
+                    ),
+                    fontSize: fontSize
                 )
+                .fixedSize()
 
-            ScrollableText(
-                options: monthNames,
-                selectedIndex: $selectedMonthIndex,
-                fontSize: fontSize
-            )
-            .fixedSize()
+                Text(" of ")
+                    .font(Theme.Fonts.heading(size: fontSize))
+                    .foregroundColor(Theme.headingColor(for: colorScheme))
+                    .shadow(
+                        color: Theme.shadowColor(for: colorScheme).opacity(0.3),
+                        radius: Theme.Layout.shadowRadius,
+                        x: Theme.Layout.shadowX,
+                        y: Theme.Layout.shadowY
+                    )
+                    .fixedSize()
 
-            Text("'s ")
-                .font(Theme.Fonts.heading(size: fontSize))
-                .foregroundColor(Theme.headingColor(for: colorScheme))
-                .shadow(
-                    color: Theme.shadowColor(for: colorScheme).opacity(0.3),
-                    radius: Theme.Layout.shadowRadius,
-                    x: Theme.Layout.shadowX,
-                    y: Theme.Layout.shadowY
+                ScrollableText(
+                    options: monthNames,
+                    selectedIndex: $selectedMonthIndex,
+                    fontSize: fontSize
                 )
+                .fixedSize()
 
-            ScrollableText(
-                options: budgets.map { $0.emoji },
-                selectedIndex: $selectedBudgetIndex,
-                fontSize: fontSize
-            )
-            .fixedSize()
+                Text("'s")
+                    .font(Theme.Fonts.heading(size: fontSize))
+                    .foregroundColor(Theme.headingColor(for: colorScheme))
+                    .shadow(
+                        color: Theme.shadowColor(for: colorScheme).opacity(0.3),
+                        radius: Theme.Layout.shadowRadius,
+                        x: Theme.Layout.shadowX,
+                        y: Theme.Layout.shadowY
+                    )
+                    .fixedSize()
+            }
+            .frame(maxWidth: .infinity)
 
-            Text(" spendings")
-                .font(Theme.Fonts.heading(size: fontSize))
-                .foregroundColor(Theme.headingColor(for: colorScheme))
-                .shadow(
-                    color: Theme.shadowColor(for: colorScheme).opacity(0.3),
-                    radius: Theme.Layout.shadowRadius,
-                    x: Theme.Layout.shadowX,
-                    y: Theme.Layout.shadowY
+            // Line 2: "[emoji] spendings"
+            HStack(spacing: 0) {
+                ScrollableText(
+                    options: budgets.map { $0.emoji },
+                    selectedIndex: $selectedBudgetIndex,
+                    fontSize: fontSize
                 )
+                .fixedSize()
 
-            Spacer()
+                Text(" spendings")
+                    .font(Theme.Fonts.heading(size: fontSize))
+                    .foregroundColor(Theme.headingColor(for: colorScheme))
+                    .shadow(
+                        color: Theme.shadowColor(for: colorScheme).opacity(0.3),
+                        radius: Theme.Layout.shadowRadius,
+                        x: Theme.Layout.shadowX,
+                        y: Theme.Layout.shadowY
+                    )
+                    .fixedSize()
+            }
+            .frame(maxWidth: .infinity)
         }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Spendings: "[Spendings] made [this month]"
@@ -186,37 +203,43 @@ struct NavigationBar: View {
     private func spendingsHeading(fontSize: CGFloat) -> some View {
         let monthNames = ["this month"] + months.dropLast().map { $0.monthName }
 
-        HStack(spacing: 0) {
-            Spacer()
-
-            ScrollableText(
-                options: Page.allCases.map { $0.rawValue },
-                selectedIndex: Binding(
-                    get: { Page.allCases.firstIndex(of: currentPage) ?? 0 },
-                    set: { currentPage = Page.allCases[$0] }
-                ),
-                fontSize: fontSize
-            )
-            .fixedSize()
-
-            Text(" made ")
-                .font(Theme.Fonts.heading(size: fontSize))
-                .foregroundColor(Theme.headingColor(for: colorScheme))
-                .shadow(
-                    color: Theme.shadowColor(for: colorScheme).opacity(0.3),
-                    radius: Theme.Layout.shadowRadius,
-                    x: Theme.Layout.shadowX,
-                    y: Theme.Layout.shadowY
+        VStack(spacing: 4) {
+            // Line 1: "Spendings made"
+            HStack(spacing: 0) {
+                ScrollableText(
+                    options: Page.allCases.map { $0.rawValue },
+                    selectedIndex: Binding(
+                        get: { Page.allCases.firstIndex(of: currentPage) ?? 0 },
+                        set: { currentPage = Page.allCases[$0] }
+                    ),
+                    fontSize: fontSize
                 )
+                .fixedSize()
 
-            ScrollableText(
-                options: monthNames,
-                selectedIndex: $selectedMonthIndex,
-                fontSize: fontSize
-            )
-            .fixedSize()
+                Text(" made")
+                    .font(Theme.Fonts.heading(size: fontSize))
+                    .foregroundColor(Theme.headingColor(for: colorScheme))
+                    .shadow(
+                        color: Theme.shadowColor(for: colorScheme).opacity(0.3),
+                        radius: Theme.Layout.shadowRadius,
+                        x: Theme.Layout.shadowX,
+                        y: Theme.Layout.shadowY
+                    )
+                    .fixedSize()
+            }
+            .frame(maxWidth: .infinity)
 
-            Spacer()
+            // Line 2: "this month"
+            HStack(spacing: 0) {
+                ScrollableText(
+                    options: monthNames,
+                    selectedIndex: $selectedMonthIndex,
+                    fontSize: fontSize
+                )
+                .fixedSize()
+            }
+            .frame(maxWidth: .infinity)
         }
+        .frame(maxWidth: .infinity)
     }
 }

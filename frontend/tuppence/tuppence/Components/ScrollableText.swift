@@ -13,10 +13,18 @@ struct ScrollableText: View {
     @State private var dragOffset: CGFloat = 0
     @Environment(\.colorScheme) var colorScheme
 
+    private var safeIndex: Int {
+        guard !options.isEmpty else { return 0 }
+        return min(max(selectedIndex, 0), options.count - 1)
+    }
+
     var body: some View {
+        if options.isEmpty {
+            EmptyView()
+        } else {
         ZStack {
             // The currently selected text (always visible)
-            Text(options[selectedIndex])
+            Text(options[safeIndex])
                 .font(Theme.Fonts.heading(size: fontSize))
                 .foregroundColor(Theme.headingColor(for: colorScheme))
                 .shadow(
@@ -29,8 +37,8 @@ struct ScrollableText: View {
                 .offset(y: dragOffset * 0.5)
 
             // Previous option (only visible during drag)
-            if selectedIndex > 0 && dragOffset > 0 {
-                Text(options[selectedIndex - 1])
+            if safeIndex > 0 && dragOffset > 0 {
+                Text(options[safeIndex - 1])
                     .font(Theme.Fonts.heading(size: fontSize))
                     .foregroundColor(Theme.headingColor(for: colorScheme))
                     .shadow(
@@ -44,8 +52,8 @@ struct ScrollableText: View {
             }
 
             // Next option (only visible during drag)
-            if selectedIndex < options.count - 1 && dragOffset < 0 {
-                Text(options[selectedIndex + 1])
+            if safeIndex < options.count - 1 && dragOffset < 0 {
+                Text(options[safeIndex + 1])
                     .font(Theme.Fonts.heading(size: fontSize))
                     .foregroundColor(Theme.headingColor(for: colorScheme))
                     .shadow(
@@ -78,5 +86,6 @@ struct ScrollableText: View {
                 }
         )
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: dragOffset)
+        }
     }
 }
