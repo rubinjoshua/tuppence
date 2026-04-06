@@ -38,10 +38,10 @@ class LoginRequest(BaseModel):
 
 class AppleSignInRequest(BaseModel):
     """Apple Sign In request"""
-    apple_id_token: str
-    apple_id: str
-    email: Optional[EmailStr] = None
-    full_name: Optional[str] = Field(None, max_length=255)
+    identity_token: str = Field(..., description="Apple identity token (JWT)")
+    authorization_code: str = Field(..., description="Apple authorization code")
+    full_name: Optional[str] = Field(None, max_length=255, description="User's full name from Apple")
+    household_token: Optional[str] = Field(None, max_length=128, description="Optional sharing token to join existing household")
 
 
 # Response schemas
