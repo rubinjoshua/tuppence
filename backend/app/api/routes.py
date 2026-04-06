@@ -39,8 +39,14 @@ from app.services.ledger_service import (
 )
 from app.services.budget_service import sync_budgets, get_all_budgets
 from app.services.automation_service import check_and_run_monthly_automation, archive_year
+from app.api.auth import router as auth_router
+from app.api.household import router as household_router
 
 router = APIRouter()
+
+# Include auth and household routes
+router.include_router(auth_router)
+router.include_router(household_router)
 
 
 # ============================================================================

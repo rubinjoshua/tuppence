@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: str = "sk-test-key"  # Default for testing, override in production
 
+    # JWT Authentication
+    JWT_SECRET_KEY: str = "dev-secret-key-change-in-production"  # Must be 256-bit random in production
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+
     # Application
     DEBUG: bool = False
     APP_NAME: str = "Tuppence Backend"

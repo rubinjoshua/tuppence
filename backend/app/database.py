@@ -76,6 +76,48 @@ def get_db() -> Session:
         db.close()
 
 
+def get_db_with_rls(request=None) -> Session:
+    """
+    Database session dependency with Row-Level Security (RLS) enabled.
+
+    Sets PostgreSQL session variable `app.current_user_id` for RLS policies.
+    This ensures users can only access data from households they belong to.
+
+    Usage:
+        from fastapi import Request
+
+        @app.get("/endpoint")
+        def endpoint(request: Request, db: Session = Depends(get_db_with_rls)):
+            # db session has RLS variable set
+            # Queries are automatically filtered by household membership
+            pass
+
+    Args:
+        request: FastAPI Request object (automatically injected)
+
+    Yields:
+        Session: Database session with RLS variable set
+    """
+    from sqlalchemy import text
+    from fastapi import Request
+
+    session_local = get_session_local()
+    db = session_local()
+
+    try:
+        # Get user_id from request state (set by DatabaseIsolationMiddleware)
+        if request and hasattr(request, 'state') and hasattr(request.state, 'user_id'):
+            user_id = request.state.user_id
+            if user_id:
+                # Set PostgreSQL session variable for RLS
+                # Use parameterized query to prevent SQL injection
+                db.execute(text("SET LOCAL app.current_user_id = :user_id"), {"user_id": str(user_id)})
+
+        yield db
+    finally:
+        db.close()
+
+
 def init_db() -> None:
     """
     Initialize database with tables and seed data.
