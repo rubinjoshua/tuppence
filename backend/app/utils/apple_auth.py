@@ -6,6 +6,8 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 from fastapi import HTTPException, status
 
+from app.config import settings
+
 
 # Apple's public keys URL
 APPLE_PUBLIC_KEYS_URL = "https://appleid.apple.com/auth/keys"
@@ -82,9 +84,6 @@ def verify_apple_identity_token(identity_token: str) -> Dict[str, Any]:
                 detail="Invalid identity token: public key not found"
             )
 
-        # Verify and decode the token
-        # Note: We're not validating 'aud' (audience) here to keep it flexible
-        # In production, you should validate audience matches your app's bundle ID
         decoded_token = jwt.decode(
             identity_token,
             public_key,
@@ -94,9 +93,11 @@ def verify_apple_identity_token(identity_token: str) -> Dict[str, Any]:
                 "verify_exp": True,
                 "verify_iat": True,
                 "verify_iss": True,
-                "require": ["sub", "iss", "iat", "exp"]
+                "verify_aud": True,
+                "require": ["sub", "iss", "iat", "exp", "aud"]
             },
-            issuer="https://appleid.apple.com"
+            issuer="https://appleid.apple.com",
+            audience=settings.APPLE_BUNDLE_ID
         )
 
         # Validate required claims

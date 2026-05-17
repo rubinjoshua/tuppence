@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
+    # Apple Sign In
+    APPLE_BUNDLE_ID: str = "com.joshuarubin.tuppence"  # iOS app bundle ID; tokens are validated against this audience
+
     # Stripe
     STRIPE_SECRET_KEY: str = "sk_test_default"  # Default for testing, override in production
     STRIPE_PUBLISHABLE_KEY: str = "pk_test_default"  # Frontend needs this
