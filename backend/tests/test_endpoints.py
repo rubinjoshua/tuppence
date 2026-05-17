@@ -1,218 +1,265 @@
-"""Basic endpoint tests"""
+"""Core endpoint tests - auth-gated and household-scoped."""
 
 import pytest
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from uuid import UUID
+
+from app.models.user import User
+from app.models.household import Household, HouseholdMember
+from app.models.budget import Budget
+from app.models.ledger import LedgerEntry
+from app.models.session import Session
+
+
+def _build_account(db, email: str, name: str):
+    user = User(email=email, password_hash="x", full_name=name, is_active=True)
+    db.add(user)
+    db.flush()
+
+    household = Household(name=f"{name}'s House")
+    db.add(household)
+    db.flush()
+
+    db.add(HouseholdMember(household_id=household.id, user_id=user.id, role="owner"))
+    db.flush()
+
+    session = Session(
+        user_id=user.id,
+        household_id=household.id,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+    )
+    db.add(session)
+    db.commit()
+
+    # Capture primitive IDs so tests can compare after the ORM session expires the instances.
+    return {
+        "user_id": user.id,
+        "household_id": household.id,
+        "session_id": session.id,
+        "headers": {"Authorization": f"Bearer {session.id}"},
+    }
+
+
+@pytest.fixture
+def alice(client, db):
+    return _build_account(db, "alice@test.com", "Alice")
+
+
+@pytest.fixture
+def bob(client, db, alice):
+    return _build_account(db, "bob@test.com", "Bob")
+
+
+@pytest.fixture
+def mock_categorizer(monkeypatch):
+    async def mock_categorize(text, db):
+        return "Groceries"
+
+    from app.api import routes
+    monkeypatch.setattr(routes, "get_or_create_category", mock_categorize)
 
 
 def test_health_check(client):
-    """Test health check endpoint"""
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
 
 
 def test_root_endpoint(client):
-    """Test root endpoint"""
     response = client.get("/")
     assert response.status_code == 200
     assert "version" in response.json()
 
 
-def test_sync_budgets(client, sample_budgets):
-    """Test syncing budgets from iOS"""
-    response = client.post("/sync_budgets", json={"budgets": sample_budgets})
-    assert response.status_code == 200
-    data = response.json()
-    assert data["success"] is True
-    assert data["synced_count"] == 3
+class TestAuthGating:
+    """Every core endpoint must reject unauthenticated requests."""
+
+    @pytest.mark.parametrize("method,path", [
+        ("get", "/amounts"),
+        ("get", "/monthly_budgets"),
+        ("get", "/ledger"),
+        ("get", "/category_map?budget_emoji=🛒"),
+        ("post", "/make_spending"),
+        ("delete", "/undo_spending/00000000-0000-0000-0000-000000000000"),
+        ("post", "/sync_settings"),
+        ("post", "/check_automations"),
+        ("get", "/export_year?year=2026"),
+        ("post", "/archive_year?year=2026"),
+    ])
+    def test_unauthenticated_rejected(self, client, method, path):
+        response = getattr(client, method)(path) if method != "post" else client.post(path, json={})
+        assert response.status_code == 401
 
 
-def test_get_monthly_budgets(client, sample_budgets):
-    """Test getting monthly budgets"""
-    # First sync budgets
-    client.post("/sync_budgets", json={"budgets": sample_budgets})
+class TestAmounts:
+    def test_empty(self, client, alice):
+        response = client.get("/amounts", headers=alice["headers"])
+        assert response.status_code == 200
+        assert response.json() == {"budgets": []}
 
-    # Then get them
-    response = client.get("/monthly_budgets")
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data["budgets"]) == 3
-    assert data["budgets"][0]["emoji"] in ["🛒", "✈️", "🎬"]
+    def test_household_isolation(self, client, db, alice, bob):
+        db.add_all([
+            Budget(household_id=alice["household_id"], emoji="🛒", label="Alice Groc", monthly_amount=500),
+            Budget(household_id=bob["household_id"], emoji="🛒", label="Bob Groc", monthly_amount=600),
+        ])
+        db.commit()
 
+        alice_resp = client.get("/amounts", headers=alice["headers"]).json()
+        bob_resp = client.get("/amounts", headers=bob["headers"]).json()
 
-def test_get_amounts_empty(client):
-    """Test getting amounts with no data"""
-    response = client.get("/amounts")
-    assert response.status_code == 200
-    data = response.json()
-    assert "budgets" in data
-    assert len(data["budgets"]) == 0
-
-
-def test_sync_settings(client):
-    """Test syncing settings"""
-    response = client.post("/sync_settings", json={"currency_symbol": "$"})
-    assert response.status_code == 200
-    assert response.json()["success"] is True
+        assert len(alice_resp["budgets"]) == 1
+        assert alice_resp["budgets"][0]["label"] == "Alice Groc"
+        assert len(bob_resp["budgets"]) == 1
+        assert bob_resp["budgets"][0]["label"] == "Bob Groc"
 
 
-def test_make_spending(client, sample_budgets, monkeypatch):
-    """Test making a spending entry"""
-    # Mock the OpenAI categorization to avoid API calls
-    async def mock_categorize(text, db):
-        return "Groceries"
+class TestMonthlyBudgets:
+    def test_household_isolation(self, client, db, alice, bob):
+        db.add(Budget(household_id=alice["household_id"], emoji="🛒", label="A", monthly_amount=500))
+        db.add(Budget(household_id=bob["household_id"], emoji="✈️", label="B", monthly_amount=1000))
+        db.commit()
 
-    from app.api import routes
-    monkeypatch.setattr(routes, "get_or_create_category", mock_categorize)
+        alice_resp = client.get("/monthly_budgets", headers=alice["headers"]).json()
+        bob_resp = client.get("/monthly_budgets", headers=bob["headers"]).json()
 
-    # Sync budgets first
-    client.post("/sync_budgets", json={"budgets": sample_budgets})
-
-    # Make spending
-    response = client.post("/make_spending", json={
-        "amount": -50,
-        "currency": "USD",
-        "budget_emoji": "🛒",
-        "description_text": "milk and eggs"
-    })
-
-    assert response.status_code == 200
-    data = response.json()
-    assert "uuid" in data
-    assert data["category"] == "Groceries"
-    assert data["success"] is True
+        assert [b["emoji"] for b in alice_resp["budgets"]] == ["🛒"]
+        assert [b["emoji"] for b in bob_resp["budgets"]] == ["✈️"]
 
 
-def test_get_ledger_empty(client):
-    """Test getting ledger with no entries"""
-    response = client.get("/ledger")
-    assert response.status_code == 200
-    data = response.json()
-    assert isinstance(data, list)
-    assert len(data) == 0
+class TestMakeSpending:
+    def test_stamps_household_id(self, client, db, alice, mock_categorizer):
+        db.add(Budget(household_id=alice["household_id"], emoji="🛒", label="Groceries", monthly_amount=500))
+        db.commit()
+
+        response = client.post(
+            "/make_spending",
+            json={"amount": -50, "currency": "USD", "budget_emoji": "🛒", "description_text": "milk"},
+            headers=alice["headers"],
+        )
+        assert response.status_code == 200
+
+        entry = db.query(LedgerEntry).first()
+        assert entry.household_id == alice["household_id"]
+        assert entry.amount == -50
 
 
-def test_get_ledger_with_month(client):
-    """Test getting ledger for specific month"""
-    response = client.get("/ledger?month=2026-03")
-    assert response.status_code == 200
-    assert isinstance(response.json(), list)
+class TestLedger:
+    def test_household_isolation(self, client, db, alice, bob, mock_categorizer):
+        client.post(
+            "/make_spending",
+            json={"amount": -10, "currency": "USD", "budget_emoji": "🛒", "description_text": "alice"},
+            headers=alice["headers"],
+        )
+        client.post(
+            "/make_spending",
+            json={"amount": -20, "currency": "USD", "budget_emoji": "🛒", "description_text": "bob"},
+            headers=bob["headers"],
+        )
+
+        alice_ledger = client.get("/ledger", headers=alice["headers"]).json()
+        bob_ledger = client.get("/ledger", headers=bob["headers"]).json()
+
+        assert len(alice_ledger) == 1
+        assert alice_ledger[0]["description_text"] == "alice"
+        assert len(bob_ledger) == 1
+        assert bob_ledger[0]["description_text"] == "bob"
 
 
-def test_get_category_map_missing_emoji(client):
-    """Test category map without budget emoji"""
-    response = client.get("/category_map")
-    assert response.status_code == 400
-    assert "budget_emoji" in response.json()["detail"]
+class TestUndoSpending:
+    def test_cannot_delete_other_household_entry(self, client, db, alice, bob, mock_categorizer):
+        """Critical security check: user B must not be able to delete user A's entry by UUID."""
+        resp = client.post(
+            "/make_spending",
+            json={"amount": -10, "currency": "USD", "budget_emoji": "🛒", "description_text": "alice"},
+            headers=alice["headers"],
+        )
+        entry_uuid = UUID(resp.json()["uuid"])
+
+        bob_delete = client.delete(f"/undo_spending/{entry_uuid}", headers=bob["headers"])
+        assert bob_delete.status_code == 404
+
+        assert db.query(LedgerEntry).filter_by(uuid=entry_uuid).first() is not None
+
+        alice_delete = client.delete(f"/undo_spending/{entry_uuid}", headers=alice["headers"])
+        assert alice_delete.status_code == 200
+        assert db.query(LedgerEntry).filter_by(uuid=entry_uuid).first() is None
+
+    def test_unknown_uuid_404(self, client, alice):
+        response = client.delete(
+            "/undo_spending/00000000-0000-0000-0000-000000000000",
+            headers=alice["headers"],
+        )
+        assert response.status_code == 404
 
 
-def test_get_category_map_empty(client):
-    """Test category map with no data"""
-    response = client.get("/category_map?budget_emoji=🛒&month=2026-03")
-    assert response.status_code == 200
-    data = response.json()
-    assert "categories" in data
-    assert len(data["categories"]) == 0
+class TestSyncSettings:
+    def test_creates_then_updates_per_household(self, client, db, alice, bob):
+        from app.models.settings import Settings
+
+        client.post("/sync_settings", json={"currency_symbol": "$"}, headers=alice["headers"])
+        client.post("/sync_settings", json={"currency_symbol": "€"}, headers=bob["headers"])
+
+        alice_settings = db.query(Settings).filter_by(household_id=alice["household_id"]).first()
+        bob_settings = db.query(Settings).filter_by(household_id=bob["household_id"]).first()
+        assert alice_settings.currency_symbol == "$"
+        assert bob_settings.currency_symbol == "€"
+
+        # Update path
+        client.post("/sync_settings", json={"currency_symbol": "₪"}, headers=alice["headers"])
+        updated = db.query(Settings).filter_by(household_id=alice["household_id"]).first()
+        assert updated.currency_symbol == "₪"
 
 
-def test_undo_spending_not_found(client):
-    """Test deleting non-existent spending"""
-    fake_uuid = "00000000-0000-0000-0000-000000000000"
-    response = client.delete(f"/undo_spending/{fake_uuid}")
-    assert response.status_code == 404
+class TestCheckAutomations:
+    def test_no_budgets(self, client, alice):
+        response = client.post("/check_automations", headers=alice["headers"])
+        assert response.status_code == 200
+        assert response.json()["monthly_update_ran"] is False
+
+    def test_runs_once_per_month(self, client, db, alice):
+        db.add(Budget(household_id=alice["household_id"], emoji="🛒", label="Groc", monthly_amount=500))
+        db.commit()
+
+        first = client.post("/check_automations", headers=alice["headers"]).json()
+        assert first["monthly_update_ran"] is True
+
+        second = client.post("/check_automations", headers=alice["headers"]).json()
+        assert second["monthly_update_ran"] is False
+
+    def test_household_isolation(self, client, db, alice, bob):
+        db.add(Budget(household_id=alice["household_id"], emoji="🛒", label="A", monthly_amount=500))
+        db.add(Budget(household_id=bob["household_id"], emoji="✈️", label="B", monthly_amount=300))
+        db.commit()
+
+        client.post("/check_automations", headers=alice["headers"])
+
+        alice_entries = db.query(LedgerEntry).filter_by(household_id=alice["household_id"]).all()
+        bob_entries = db.query(LedgerEntry).filter_by(household_id=bob["household_id"]).all()
+        assert len(alice_entries) == 1
+        assert alice_entries[0].budget_emoji == "🛒"
+        assert len(bob_entries) == 0
 
 
-def test_check_automations(client):
-    """Test check automations endpoint"""
-    response = client.post("/check_automations")
-    assert response.status_code == 200
-    data = response.json()
-    assert "monthly_update_ran" in data
-    assert "message" in data
+class TestExportYear:
+    def test_only_returns_own_household(self, client, db, alice, bob, mock_categorizer):
+        client.post(
+            "/make_spending",
+            json={"amount": -10, "currency": "USD", "budget_emoji": "🛒", "description_text": "alice"},
+            headers=alice["headers"],
+        )
+        client.post(
+            "/make_spending",
+            json={"amount": -20, "currency": "USD", "budget_emoji": "🛒", "description_text": "bob"},
+            headers=bob["headers"],
+        )
+
+        year = datetime.now(timezone.utc).year
+        alice_csv = client.get(f"/export_year?year={year}", headers=alice["headers"]).text
+        assert "alice" in alice_csv
+        assert "bob" not in alice_csv
 
 
-def test_export_year(client):
-    """Test exporting year as CSV"""
-    response = client.get("/export_year?year=2026")
-    assert response.status_code == 200
-    assert response.headers["content-type"] == "text/csv; charset=utf-8"
-    assert "tuppence_ledger_2026.csv" in response.headers["content-disposition"]
-
-
-def test_archive_year(client):
-    """Test archiving a year"""
-    response = client.post("/archive_year?year=2025")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["success"] is True
-    assert data["year"] == 2025
-
-
-def test_make_spending_and_undo(client, sample_budgets, monkeypatch):
-    """Test creating and then deleting a spending entry"""
-    # Mock categorization
-    async def mock_categorize(text, db):
-        return "Groceries"
-
-    from app.api import routes
-    monkeypatch.setattr(routes, "get_or_create_category", mock_categorize)
-
-    # Sync budgets
-    client.post("/sync_budgets", json={"budgets": sample_budgets})
-
-    # Make spending
-    response = client.post("/make_spending", json={
-        "amount": -30,
-        "currency": "USD",
-        "budget_emoji": "🛒",
-        "description_text": "bread"
-    })
-    assert response.status_code == 200
-    uuid = response.json()["uuid"]
-
-    # Undo spending
-    response = client.delete(f"/undo_spending/{uuid}")
-    assert response.status_code == 200
-    assert response.json()["success"] is True
-
-
-def test_full_workflow(client, sample_budgets, monkeypatch):
-    """Test complete workflow: sync, spend, query"""
-    # Mock categorization
-    async def mock_categorize(text, db):
-        return "Groceries"
-
-    from app.api import routes
-    monkeypatch.setattr(routes, "get_or_create_category", mock_categorize)
-
-    # 1. Sync settings
-    response = client.post("/sync_settings", json={"currency_symbol": "$"})
-    assert response.status_code == 200
-
-    # 2. Sync budgets
-    response = client.post("/sync_budgets", json={"budgets": sample_budgets})
-    assert response.status_code == 200
-
-    # 3. Check automations
-    response = client.post("/check_automations")
-    assert response.status_code == 200
-
-    # 4. Make spending
-    response = client.post("/make_spending", json={
-        "amount": -25,
-        "currency": "USD",
-        "budget_emoji": "🛒",
-        "description_text": "coffee"
-    })
-    assert response.status_code == 200
-
-    # 5. Get ledger
-    now = datetime.now(timezone.utc)
-    month = now.strftime("%Y-%m")
-    response = client.get(f"/ledger?month={month}")
-    assert response.status_code == 200
-    assert len(response.json()) >= 1
-
-    # 6. Get amounts
-    response = client.get("/amounts")
-    assert response.status_code == 200
+class TestCategoryMap:
+    def test_missing_emoji_returns_400(self, client, alice):
+        response = client.get("/category_map", headers=alice["headers"])
+        assert response.status_code == 400

@@ -1,4 +1,4 @@
-"""Ledger service - Queries and calculations"""
+"""Ledger service - Household-scoped queries and calculations"""
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract
@@ -14,70 +14,62 @@ from app.schemas.budget import BudgetWithTotal
 from app.schemas.category import CategoryBreakdown
 
 
-def get_amounts_for_current_year(db: Session, year: Optional[int] = None) -> List[BudgetWithTotal]:
+def get_amounts_for_current_year(
+    db: Session,
+    household_id: UUID,
+    year: Optional[int] = None,
+) -> List[BudgetWithTotal]:
     """
-    Get total amount left per budget for current year.
+    Get total amount left per budget for current year, scoped to a household.
 
-    SQL: SELECT budget_emoji, SUM(amount) FROM ledger WHERE year=current_year GROUP BY budget_emoji
-
-    Args:
-        db: Database session
-        year: Year to query (defaults to current year)
-
-    Returns:
-        List of budgets with total amounts
+    SQL: SELECT budget_emoji, SUM(amount) FROM ledger
+         WHERE year=? AND household_id=? GROUP BY budget_emoji
     """
     if year is None:
         year = datetime.now(timezone.utc).year
 
-    # Get all budgets
-    budgets = db.query(Budget).all()
+    budgets = db.query(Budget).filter(Budget.household_id == household_id).all()
 
-    # Calculate totals from ledger
     ledger_totals = db.query(
         LedgerEntry.budget_emoji,
         func.sum(LedgerEntry.amount).label('total')
     ).filter(
-        LedgerEntry.year == year
+        LedgerEntry.year == year,
+        LedgerEntry.household_id == household_id,
     ).group_by(
         LedgerEntry.budget_emoji
     ).all()
 
-    # Create lookup dict
     totals_dict = {emoji: total for emoji, total in ledger_totals}
 
-    # Build response
-    result = []
-    for budget in budgets:
-        total_amount = totals_dict.get(budget.emoji, 0)
-        result.append(BudgetWithTotal(
+    return [
+        BudgetWithTotal(
             emoji=budget.emoji,
             label=budget.label,
             monthly_amount=budget.monthly_amount,
-            total_amount=total_amount
-        ))
+            total_amount=totals_dict.get(budget.emoji, 0),
+        )
+        for budget in budgets
+    ]
 
-    return result
 
-
-def get_ledger_for_month(db: Session, month_str: str) -> List[LedgerEntryResponse]:
+def get_ledger_for_month(
+    db: Session,
+    household_id: UUID,
+    month_str: str,
+) -> List[LedgerEntryResponse]:
     """
-    Get spending history for specified month.
+    Get spending history for specified month, scoped to a household.
 
     Args:
-        db: Database session
         month_str: Month in format "YYYY-MM"
-
-    Returns:
-        List of ledger entries ordered by datetime DESC
     """
-    # Parse month string
     year, month = map(int, month_str.split('-'))
 
-    # Query ledger
     entries = db.query(LedgerEntry).filter(
+        LedgerEntry.household_id == household_id,
         LedgerEntry.year == year,
-        extract('month', LedgerEntry.datetime) == month
+        extract('month', LedgerEntry.datetime) == month,
     ).order_by(
         LedgerEntry.datetime.desc()
     ).all()
@@ -87,78 +79,60 @@ def get_ledger_for_month(db: Session, month_str: str) -> List[LedgerEntryRespons
 
 def get_category_map(
     db: Session,
+    household_id: UUID,
     month_str: str,
-    budget_emoji: str
+    budget_emoji: str,
 ) -> List[CategoryBreakdown]:
     """
-    Get category breakdown for pie chart.
-
-    Groups ledger entries by category with totals and colors.
-
-    Args:
-        db: Database session
-        month_str: Month in format "YYYY-MM"
-        budget_emoji: Budget emoji to filter by
-
-    Returns:
-        List of category breakdowns with colors and totals
+    Get category breakdown for pie chart, scoped to a household.
     """
-    # Parse month string
     year, month = map(int, month_str.split('-'))
 
-    # Query ledger entries for this month and budget
     entries = db.query(LedgerEntry).filter(
+        LedgerEntry.household_id == household_id,
         LedgerEntry.year == year,
         extract('month', LedgerEntry.datetime) == month,
         LedgerEntry.budget_emoji == budget_emoji,
-        LedgerEntry.category.isnot(None)  # Only entries with categories
+        LedgerEntry.category.isnot(None),
     ).all()
 
-    # Group by category
     category_data = {}
     for entry in entries:
         if entry.category not in category_data:
-            category_data[entry.category] = {
-                'texts': [],
-                'total_amount': 0
-            }
+            category_data[entry.category] = {'texts': [], 'total_amount': 0}
         category_data[entry.category]['texts'].append(entry.description_text or "")
-        category_data[entry.category]['total_amount'] += abs(entry.amount)  # Use absolute value for pie chart
+        category_data[entry.category]['total_amount'] += abs(entry.amount)
 
-    # Get colors from categories table
     categories = db.query(Category).filter(
         Category.category_name.in_(category_data.keys())
     ).all()
     color_map = {cat.category_name: cat.hex_color for cat in categories}
 
-    # Build response
-    result = []
-    for category_name, data in category_data.items():
-        result.append(CategoryBreakdown(
+    result = [
+        CategoryBreakdown(
             category_name=category_name,
-            hex_color=color_map.get(category_name, "#CCCCCC"),  # Default gray if not found
+            hex_color=color_map.get(category_name, "#CCCCCC"),
             texts=data['texts'],
-            total_amount=data['total_amount']
-        ))
+            total_amount=data['total_amount'],
+        )
+        for category_name, data in category_data.items()
+    ]
 
-    # Sort by total_amount descending
     result.sort(key=lambda x: x.total_amount, reverse=True)
-
     return result
 
 
-def delete_ledger_entry(db: Session, entry_uuid: UUID) -> bool:
+def delete_ledger_entry(db: Session, household_id: UUID, entry_uuid: UUID) -> bool:
     """
-    Delete ledger entry by UUID.
+    Delete ledger entry by UUID, only if it belongs to the given household.
 
-    Args:
-        db: Database session
-        entry_uuid: UUID of entry to delete
-
-    Returns:
-        True if deleted, False if not found
+    Filtering by household_id prevents user A from deleting user B's entries
+    by guessing UUIDs.
     """
-    entry = db.query(LedgerEntry).filter(LedgerEntry.uuid == entry_uuid).first()
+    entry = db.query(LedgerEntry).filter(
+        LedgerEntry.uuid == entry_uuid,
+        LedgerEntry.household_id == household_id,
+    ).first()
     if not entry:
         return False
 
@@ -167,28 +141,21 @@ def delete_ledger_entry(db: Session, entry_uuid: UUID) -> bool:
     return True
 
 
-def export_year_as_csv(db: Session, year: int) -> str:
+def export_year_as_csv(db: Session, household_id: UUID, year: int) -> str:
     """
-    Export all ledger entries for a year as CSV.
-
-    Args:
-        db: Database session
-        year: Year to export
-
-    Returns:
-        CSV string with headers: Date, Budget, Description, Category, Amount, Currency
+    Export all ledger entries for a year as CSV, scoped to a household.
     """
     entries = db.query(LedgerEntry).filter(
-        LedgerEntry.year == year
+        LedgerEntry.household_id == household_id,
+        LedgerEntry.year == year,
     ).order_by(
         LedgerEntry.datetime.asc()
     ).all()
 
-    # Build CSV
     lines = ["Date,Budget,Description,Category,Amount,Currency"]
     for entry in entries:
         date_str = entry.datetime.strftime("%Y-%m-%d %H:%M:%S")
-        description = (entry.description_text or "").replace('"', '""')  # Escape quotes
+        description = (entry.description_text or "").replace('"', '""')
         category = (entry.category or "").replace('"', '""')
         lines.append(
             f'"{date_str}","{entry.budget_emoji}","{description}","{category}",{entry.amount},"{entry.currency}"'

@@ -51,18 +51,6 @@ class DeleteBudgetResponse(BaseModel):
     message: str = "Budget deleted successfully"
 
 
-# Legacy schemas for backward compatibility with old sync endpoint
-class SyncBudgetsRequest(BaseModel):
-    """Request schema for syncing budgets from iOS Settings (deprecated)"""
-    budgets: List[BudgetItem]
-
-
-class SyncBudgetsResponse(BaseModel):
-    """Response schema after syncing budgets (deprecated)"""
-    success: bool = True
-    synced_count: int
-
-
 class BudgetWithTotal(BaseModel):
     """Schema for budget with current total amount"""
     emoji: str
