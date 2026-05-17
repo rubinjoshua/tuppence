@@ -22,17 +22,21 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
-    # Apple Sign In
-    APPLE_BUNDLE_ID: str = "com.joshuarubin.tuppence"  # iOS app bundle ID; tokens are validated against this audience
+    # Apple (Sign In + StoreKit 2 / App Store Server API)
+    # Bundle ID is the iOS app bundle ID; both Apple Sign In token audience checks
+    # and StoreKit signed-transaction verification compare against this value.
+    APPLE_BUNDLE_ID: str = "com.joshuarubin.tuppence"
+    APPLE_APP_APPLE_ID: int = 0  # Numeric App Store app ID (from App Store Connect)
+    APPLE_ISSUER_ID: str = ""  # UUID from ASC > Users and Access > Keys > In-App Purchase
+    APPLE_KEY_ID: str = ""  # 10-char key ID from the same page
+    APPLE_PRIVATE_KEY: str = ""  # Multi-line PEM contents of the .p8 file
+    APPLE_ENVIRONMENT: str = "Sandbox"  # "Sandbox" or "Production"
 
-    # Stripe
-    STRIPE_SECRET_KEY: str = "sk_test_default"  # Default for testing, override in production
-    STRIPE_PUBLISHABLE_KEY: str = "pk_test_default"  # Frontend needs this
-    STRIPE_WEBHOOK_SECRET: str = "whsec_test_default"  # Webhook signature verification
-    STRIPE_PREMIUM_MONTHLY_PRICE_ID: str = ""  # Set in Stripe dashboard
-    STRIPE_PREMIUM_YEARLY_PRICE_ID: str = ""  # Set in Stripe dashboard
-    STRIPE_PRO_MONTHLY_PRICE_ID: str = ""  # Set in Stripe dashboard
-    STRIPE_PRO_YEARLY_PRICE_ID: str = ""  # Set in Stripe dashboard
+    # Subscription product IDs (must match App Store Connect exactly).
+    APPLE_PRODUCT_ID_PREMIUM_MONTHLY: str = "com.joshuarubin.tuppence.premium.monthly"
+    APPLE_PRODUCT_ID_PREMIUM_YEARLY: str = "com.joshuarubin.tuppence.premium.yearly"
+    APPLE_PRODUCT_ID_PRO_MONTHLY: str = "com.joshuarubin.tuppence.pro.monthly"
+    APPLE_PRODUCT_ID_PRO_YEARLY: str = "com.joshuarubin.tuppence.pro.yearly"
 
     # Application
     DEBUG: bool = False

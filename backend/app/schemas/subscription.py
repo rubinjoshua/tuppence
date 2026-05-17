@@ -1,105 +1,51 @@
-"""Subscription schemas for request/response models"""
+"""Subscription request/response schemas - Apple StoreKit 2"""
 
-from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional
-from enum import Enum
+from typing import List, Optional
 
+from pydantic import BaseModel, ConfigDict, Field
 
-class SubscriptionTier(str, Enum):
-    """Subscription tier levels"""
-    FREE = "free"
-    PREMIUM = "premium"
-    PRO = "pro"
-
-
-class SubscriptionStatus(str, Enum):
-    """Subscription status states"""
-    ACTIVE = "active"
-    PAST_DUE = "past_due"
-    CANCELED = "canceled"
-    INCOMPLETE = "incomplete"
-    INCOMPLETE_EXPIRED = "incomplete_expired"
-    TRIALING = "trialing"
-    UNPAID = "unpaid"
+from app.models.subscription import SubscriptionTier, SubscriptionStatus
 
 
 class SubscriptionResponse(BaseModel):
-    """
-    Subscription information response (backend → frontend).
+    """Current subscription state for the caller's household."""
+    model_config = ConfigDict(from_attributes=True)
 
-    Uses camelCase for frontend compatibility (NO CodingKeys needed).
-    """
     householdId: str
     tier: SubscriptionTier
     status: SubscriptionStatus
+    productId: Optional[str] = None
+    environment: Optional[str] = None
     currentPeriodStart: Optional[datetime] = None
     currentPeriodEnd: Optional[datetime] = None
-    cancelAtPeriodEnd: bool
-    canceledAt: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
+    autoRenewStatus: Optional[bool] = None
+    isActive: bool = False
 
 
-class CreateCheckoutSessionRequest(BaseModel):
+class VerifyTransactionRequest(BaseModel):
     """
-    Request to create Stripe checkout session (frontend → backend).
-
-    Uses snake_case in API (CodingKeys on frontend).
+    Frontend posts the signed JWS string from StoreKit's
+    `Transaction.jwsRepresentation` after a successful purchase or restore.
     """
-    price_id: str = Field(..., description="Stripe price ID for the subscription tier")
-    success_url: str = Field(..., description="URL to redirect after successful payment")
-    cancel_url: str = Field(..., description="URL to redirect if payment is canceled")
+    signedTransaction: str = Field(..., description="JWS-encoded transaction from StoreKit")
 
 
-class CheckoutSessionResponse(BaseModel):
-    """
-    Checkout session creation response (backend → frontend).
+class PricingTier(BaseModel):
+    """One pricing tier.
 
-    Uses camelCase for frontend compatibility.
-    """
-    sessionId: str = Field(..., description="Stripe checkout session ID")
-    sessionUrl: str = Field(..., description="URL to redirect user to Stripe checkout")
-
-
-class CustomerPortalRequest(BaseModel):
-    """
-    Request to create Stripe customer portal session (frontend → backend).
-
-    Uses snake_case in API (CodingKeys on frontend).
-    """
-    return_url: str = Field(..., description="URL to redirect after portal session")
-
-
-class CustomerPortalResponse(BaseModel):
-    """
-    Customer portal session response (backend → frontend).
-
-    Uses camelCase for frontend compatibility.
-    """
-    portalUrl: str = Field(..., description="URL to redirect user to Stripe customer portal")
-
-
-class PricingInfo(BaseModel):
-    """
-    Pricing tier information (backend → frontend).
-
-    Uses camelCase for frontend compatibility.
+    Display prices are owned by App Store / StoreKit, NOT the backend —
+    the iOS app looks them up from `Product.products(for:)` using the product
+    IDs returned here.
     """
     tier: SubscriptionTier
-    priceId: str
     displayName: str
-    monthlyPrice: str
-    yearlyPrice: str
-    features: list[str]
+    monthlyProductId: str
+    yearlyProductId: str
+    features: List[str]
 
 
 class PricingResponse(BaseModel):
-    """
-    Available pricing tiers response (backend → frontend).
-
-    Uses camelCase for frontend compatibility.
-    """
-    tiers: list[PricingInfo]
+    """Available tiers and the caller's current tier."""
+    tiers: List[PricingTier]
     currentTier: SubscriptionTier

@@ -9,7 +9,7 @@ from app.models.user import User
 from app.models.household import Household, HouseholdMember
 from app.models.session import Session
 from app.models.sharing_token import SharingToken
-from app.models.subscription import Subscription, WebhookEvent
+from app.models.subscription import Subscription, AppleNotification
 
 __all__ = [
     "LedgerEntry",
@@ -23,5 +23,5 @@ __all__ = [
     "Session",
     "SharingToken",
     "Subscription",
-    "WebhookEvent",
+    "AppleNotification",
 ]
