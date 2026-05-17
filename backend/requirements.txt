@@ -16,3 +16,4 @@ slowapi==0.1.9
 pyjwt==2.8.0
 cryptography==42.0.5
 requests==2.31.0
+stripe==11.1.0
