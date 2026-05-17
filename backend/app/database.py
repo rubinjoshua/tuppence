@@ -120,47 +120,35 @@ def get_db_with_rls(request=None) -> Session:
 
 def init_db() -> None:
     """
-    Initialize database with tables and seed data.
+    Initialize global seed data on application startup.
 
-    Call this function on application startup to:
-    1. Create all tables defined in models
-    2. Seed categories table with 150 predefined categories and colors
-    3. Initialize settings table with default values
+    Schema management lives in alembic — `alembic upgrade head` runs as part of
+    container start (see nixpacks.toml) and is the authoritative source for
+    table structure. `create_all` is still called here so a fresh dev DB
+    (e.g. SQLite for tests) can boot without alembic; in production it's a
+    harmless no-op because alembic already built everything.
 
-    This is idempotent - safe to call multiple times.
+    Settings is per-household and seeded lazily when a household first writes
+    to `/sync_settings`, so we don't seed it here.
+
+    Safe to call multiple times.
     """
-    from app.models.ledger import LedgerEntry
-    from app.models.budget import Budget
     from app.models.category import Category
-    from app.models.text_category_cache import TextCategoryCache
-    from app.models.settings import Settings as SettingsModel
     from app.utils.categories import PREDEFINED_CATEGORIES
     from app.utils.colors import WES_ANDERSON_COLORS
 
-    # Create all tables
     engine = get_engine()
     Base.metadata.create_all(bind=engine)
 
-    # Seed data
     session_local = get_session_local()
     db = session_local()
     try:
-        # Seed categories if empty
         if db.query(Category).count() == 0:
             print("Seeding categories...")
             for i, category_name in enumerate(PREDEFINED_CATEGORIES):
-                # Assign colors cyclically if we have more categories than colors
                 color = WES_ANDERSON_COLORS[i % len(WES_ANDERSON_COLORS)]
                 db.add(Category(category_name=category_name, hex_color=color))
             db.commit()
             print(f"Seeded {len(PREDEFINED_CATEGORIES)} categories")
-
-        # Initialize settings if empty
-        if db.query(SettingsModel).count() == 0:
-            print("Initializing settings...")
-            db.add(SettingsModel(id=1, currency_symbol="$"))
-            db.commit()
-            print("Settings initialized")
-
     finally:
         db.close()
