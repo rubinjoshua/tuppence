@@ -5,6 +5,7 @@
 
 import Combine
 import Foundation
+import WidgetKit
 
 class AppSettings: ObservableObject {
     static let shared = AppSettings()
@@ -20,6 +21,9 @@ class AppSettings: ObservableObject {
         didSet {
             guard !isLoading, currencySymbol != oldValue else { return }
             defaults.set(currencySymbol, forKey: "currency_symbol")
+            // Nudge the widget to redraw immediately instead of waiting up
+            // to 15 minutes for the next timeline refresh.
+            WidgetCenter.shared.reloadAllTimelines()
         }
     }
 

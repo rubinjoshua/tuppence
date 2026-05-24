@@ -105,15 +105,20 @@ struct Provider: TimelineProvider {
 
 // MARK: - View
 
-private let currencySymbol: String = {
+private func readCurrencySymbol() -> String {
     let group = UserDefaults(suiteName: "group.com.joshuarubin.tuppence")
     return group?.string(forKey: "currency_symbol") ?? "$"
-}()
+}
 
 struct TuppenceWidgetExtensionEntryView: View {
     var entry: BudgetEntry
 
     var body: some View {
+        // Read on every render so the widget reflects whatever the main app
+        // last wrote to the App Group, not whatever was cached when the
+        // widget extension process started.
+        let currencySymbol = readCurrencySymbol()
+
         if entry.budgets.isEmpty {
             Text("No budgets")
                 .font(.system(size: 14))
