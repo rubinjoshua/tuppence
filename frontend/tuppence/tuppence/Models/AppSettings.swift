@@ -10,8 +10,14 @@ class AppSettings: ObservableObject {
     static let shared = AppSettings()
 
     private let defaults = UserDefaults.standard
+    private var isLoading = false
 
-    @Published var currencySymbol: String = "$"
+    @Published var currencySymbol: String = "$" {
+        didSet {
+            guard !isLoading, currencySymbol != oldValue else { return }
+            defaults.set(currencySymbol, forKey: "currency_symbol")
+        }
+    }
 
     let backendURL = "https://tuppence-production-8de5.up.railway.app"
 
@@ -20,17 +26,14 @@ class AppSettings: ObservableObject {
         loadFromSettings()
     }
 
-    /// Register Settings.bundle defaults so they appear before the user opens Settings
     private func registerDefaults() {
-        let defaults: [String: Any] = [
-            "currency_symbol": "$"
-        ]
-        UserDefaults.standard.register(defaults: defaults)
+        UserDefaults.standard.register(defaults: ["currency_symbol": "$"])
     }
 
-    /// Reload all settings from UserDefaults (called on app activation)
     func loadFromSettings() {
+        isLoading = true
         currencySymbol = defaults.string(forKey: "currency_symbol") ?? "$"
+        isLoading = false
     }
 
     // Currency code mapping for backend
