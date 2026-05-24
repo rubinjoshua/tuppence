@@ -1,16 +1,16 @@
 """150 Wes Anderson-inspired pastel colors"""
 
 WES_ANDERSON_COLORS = [
-    "#D9CA94",  # Pale gold
+    "#E07A5F",  # Terracotta (was #D9CA94 Pale gold — exact match to light bg)
     "#AC8546",  # Muted bronze
     "#334E63",  # Slate blue
     "#CD1D05",  # Deep red
-    "#F4E8C1",  # Cream
+    "#81B29A",  # Sage (was #F4E8C1 Cream — invisible on light bg)
     "#B7C9D3",  # Powder blue
     "#E8C4B0",  # Peach
     "#A8DADC",  # Sky blue
-    "#F1FAEE",  # Off white
-    "#FFE5B4",  # Apricot
+    "#3D5A80",  # Steel blue (was #F1FAEE Off white — invisible on light bg)
+    "#9A8C98",  # Mauve (was #FFE5B4 Apricot — too pale)
     "#E8B4B8",  # Dusty rose
     "#C9ADA7",  # Taupe
     "#9A8C98",  # Mauve
@@ -19,7 +19,7 @@ WES_ANDERSON_COLORS = [
     "#F2CC8F",  # Butter
     "#E07A5F",  # Terracotta
     "#81B29A",  # Sage
-    "#F4F1DE",  # Ivory
+    "#EE6C4D",  # Coral (was #F4F1DE Ivory — invisible on light bg)
     "#3D5A80",  # Steel blue
     "#98C1D9",  # Light blue
     "#EE6C4D",  # Coral
@@ -56,7 +56,7 @@ WES_ANDERSON_COLORS = [
     "#F2CC8F",  # Golden cream
     "#E07A5F",  # Burnt orange
     "#81B29A",  # Mint green
-    "#F4F1DE",  # Vanilla
+    "#C9ADA7",  # Taupe (was #F4F1DE Vanilla — invisible on light bg)
     "#E0FBFC",  # Ice blue
     "#FED9B7",  # Peach cream
     "#F07167",  # Warm red
