@@ -106,7 +106,8 @@ struct Provider: TimelineProvider {
 // MARK: - View
 
 private let currencySymbol: String = {
-    UserDefaults.standard.string(forKey: "currency_symbol") ?? "$"
+    let group = UserDefaults(suiteName: "group.com.joshuarubin.tuppence")
+    return group?.string(forKey: "currency_symbol") ?? "$"
 }()
 
 struct TuppenceWidgetExtensionEntryView: View {
