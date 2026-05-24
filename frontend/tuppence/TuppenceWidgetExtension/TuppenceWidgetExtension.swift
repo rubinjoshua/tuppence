@@ -10,13 +10,16 @@ import Security
 // MARK: - Widget Model
 
 struct WidgetBudget: Decodable, Identifiable {
-    let id: Int?
+    // /amounts returns BudgetWithTotal which has no id field. Without a
+    // stable identity ForEach would dedupe rows and render the first
+    // emoji five times. Emoji is the user-facing budget key.
+    var id: String { emoji }
+
     let emoji: String
     let label: String
     let totalAmount: Int?
 
     enum CodingKeys: String, CodingKey {
-        case id
         case emoji
         case label
         case totalAmount = "total_amount"

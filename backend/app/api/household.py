@@ -8,6 +8,7 @@ import secrets
 from app.database import get_db
 from app.models.user import User
 from app.models.household import Household, HouseholdMember
+from app.models.session import Session as SessionModel
 from app.models.sharing_token import SharingToken
 from app.schemas.household import (
     CreateHouseholdRequest,
@@ -353,6 +354,15 @@ async def join_household(
         role="member"
     )
     db.add(membership)
+
+    # Switch the user's active sessions to the new household so subsequent
+    # API calls return the joined household's data (budgets, ledger, settings).
+    # Without this, get_current_user_and_household reads the stale household_id
+    # baked into the session at registration and the joiner sees nothing.
+    db.query(SessionModel).filter(SessionModel.user_id == user.id).update(
+        {"household_id": sharing_token.household_id},
+        synchronize_session=False,
+    )
 
     # Mark token as used
     sharing_token.used_at = datetime.now(timezone.utc)

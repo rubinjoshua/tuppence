@@ -139,7 +139,7 @@ async def make_spending(
 
     category = await get_or_create_category(request.description_text or "", db)
 
-    dt = request.datetime or datetime.now(timezone.utc)
+    dt = request.spent_at or datetime.now(timezone.utc)
 
     entry = LedgerEntry(
         household_id=household.id,
