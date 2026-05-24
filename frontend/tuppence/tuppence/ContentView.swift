@@ -8,12 +8,15 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var viewModel = AppViewModel()
     @ObservedObject private var settings = AppSettings.shared
+    @ObservedObject private var authManager = AuthenticationManager.shared
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
 
     @State private var currentPage: Page = .amount
     @State private var amountDisplay: AmountDisplay = .total
     @State private var selectedBudgetIndex = 0
     @State private var selectedMonthIndex = 0
     @State private var isShowingAddExpense = false
+    @State private var showSubscriptionPaywall = false
 
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.scenePhase) var scenePhase
@@ -27,10 +30,18 @@ struct ContentView: View {
     }
 
     private var selectedBudget: Budget? {
-        settings.budgets[safe: selectedBudgetIndex]
+        viewModel.budgets[safe: selectedBudgetIndex]
     }
 
     var body: some View {
+        if authManager.isAuthenticated {
+            authenticatedContent
+        } else {
+            LoginView()
+        }
+    }
+
+    private var authenticatedContent: some View {
         ZStack {
             // Background
             Theme.backgroundColor(for: colorScheme)
@@ -41,7 +52,7 @@ struct ContentView: View {
                 switch currentPage {
                 case .amount:
                     AmountView(
-                        budgets: viewModel.budgets.isEmpty ? settings.budgets : viewModel.budgets,
+                        budgets: viewModel.budgets,
                         displayMode: amountDisplay
                     )
                 case .analysis:
@@ -86,6 +97,8 @@ struct ContentView: View {
                     .task {
                         await viewModel.loadLedger(for: selectedMonth)
                     }
+                case .settings:
+                    SettingsView()
                 }
 
                 Spacer()
@@ -97,7 +110,7 @@ struct ContentView: View {
                 amountDisplay: $amountDisplay,
                 selectedBudgetIndex: $selectedBudgetIndex,
                 selectedMonthIndex: $selectedMonthIndex,
-                budgets: settings.budgets,
+                budgets: viewModel.budgets,
                 months: months
             )
             .onChange(of: currentPage) { _, newPage in
@@ -111,6 +124,9 @@ struct ContentView: View {
                         }
                     case .spendings:
                         await viewModel.loadLedger(for: selectedMonth)
+                    case .settings:
+                        // No data loading needed for settings page
+                        break
                     }
                 }
             }
@@ -128,18 +144,22 @@ struct ContentView: View {
         }
         .addExpenseSheet(
             isPresented: $isShowingAddExpense,
-            budgets: settings.budgets,
+            budgets: viewModel.budgets,
             onAddExpense: { amount, emoji, description in
                 await viewModel.addSpending(amount: amount, budgetEmoji: emoji, description: description)
             }
         )
         .task {
             await viewModel.syncAndLoad()
+            await subscriptionManager.checkSubscriptionStatus()
+            checkSubscriptionAccess()
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 Task {
                     await viewModel.syncAndLoad()
+                    await subscriptionManager.checkSubscriptionStatus()
+                    checkSubscriptionAccess()
                 }
             }
         }
@@ -152,6 +172,9 @@ struct ContentView: View {
                 Text(error)
             }
         }
+        .sheet(isPresented: $showSubscriptionPaywall) {
+            SubscriptionView()
+        }
     }
 
     @ViewBuilder
@@ -163,6 +186,13 @@ struct ContentView: View {
                 .multilineTextAlignment(.center)
                 .padding()
             Spacer()
+        }
+    }
+
+    private func checkSubscriptionAccess() {
+        // Only require subscription if user is authenticated
+        if authManager.isAuthenticated && !subscriptionManager.isActive {
+            showSubscriptionPaywall = true
         }
     }
 }

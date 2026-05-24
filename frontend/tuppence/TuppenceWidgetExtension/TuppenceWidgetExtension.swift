@@ -9,7 +9,7 @@ import Security
 
 // MARK: - Widget Model
 
-private struct WidgetBudget: Decodable, Identifiable {
+struct WidgetBudget: Decodable, Identifiable {
     let id: Int?
     let emoji: String
     let label: String

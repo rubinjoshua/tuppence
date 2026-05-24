@@ -6,14 +6,68 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		92CF359D2FBA66B800F39E31 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 92CF359C2FBA66B800F39E31 /* WidgetKit.framework */; };
+		92CF359F2FBA66B800F39E31 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 92CF359E2FBA66B800F39E31 /* SwiftUI.framework */; };
+		92CF35AC2FBA66B900F39E31 /* TuppenceWidgetExtensionExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 92CF359A2FBA66B800F39E31 /* TuppenceWidgetExtensionExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		92CF35B72FBB0DB600F39E31 /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 92CF35B62FBB0DB600F39E31 /* StoreKit.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		92CF35AA2FBA66B900F39E31 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 926D5C182F79E0A700082EA6 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 92CF35992FBA66B800F39E31;
+			remoteInfo = TuppenceWidgetExtensionExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		92CF35AD2FBA66B900F39E31 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				92CF35AC2FBA66B900F39E31 /* TuppenceWidgetExtensionExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		926D5C202F79E0A700082EA6 /* tuppence.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = tuppence.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		92CF359A2FBA66B800F39E31 /* TuppenceWidgetExtensionExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TuppenceWidgetExtensionExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		92CF359C2FBA66B800F39E31 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		92CF359E2FBA66B800F39E31 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		92CF35B32FBA693F00F39E31 /* TuppenceWidgetExtensionExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TuppenceWidgetExtensionExtension.entitlements; sourceTree = "<group>"; };
+		92CF35B62FBB0DB600F39E31 /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		92CF35B02FBA66B900F39E31 /* Exceptions for "TuppenceWidgetExtension" folder in "TuppenceWidgetExtensionExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 92CF35992FBA66B800F39E31 /* TuppenceWidgetExtensionExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		926D5C222F79E0A700082EA6 /* tuppence */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = tuppence;
+			sourceTree = "<group>";
+		};
+		92CF35A02FBA66B800F39E31 /* TuppenceWidgetExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				92CF35B02FBA66B900F39E31 /* Exceptions for "TuppenceWidgetExtension" folder in "TuppenceWidgetExtensionExtension" target */,
+			);
+			path = TuppenceWidgetExtension;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -23,6 +77,16 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				92CF35B72FBB0DB600F39E31 /* StoreKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		92CF35972FBA66B800F39E31 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				92CF359F2FBA66B800F39E31 /* SwiftUI.framework in Frameworks */,
+				92CF359D2FBA66B800F39E31 /* WidgetKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -32,7 +96,10 @@
 		926D5C172F79E0A700082EA6 = {
 			isa = PBXGroup;
 			children = (
+				92CF35B32FBA693F00F39E31 /* TuppenceWidgetExtensionExtension.entitlements */,
 				926D5C222F79E0A700082EA6 /* tuppence */,
+				92CF35A02FBA66B800F39E31 /* TuppenceWidgetExtension */,
+				92CF359B2FBA66B800F39E31 /* Frameworks */,
 				926D5C212F79E0A700082EA6 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,8 +108,19 @@
 			isa = PBXGroup;
 			children = (
 				926D5C202F79E0A700082EA6 /* tuppence.app */,
+				92CF359A2FBA66B800F39E31 /* TuppenceWidgetExtensionExtension.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		92CF359B2FBA66B800F39E31 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				92CF35B62FBB0DB600F39E31 /* StoreKit.framework */,
+				92CF359C2FBA66B800F39E31 /* WidgetKit.framework */,
+				92CF359E2FBA66B800F39E31 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -55,10 +133,12 @@
 				926D5C1C2F79E0A700082EA6 /* Sources */,
 				926D5C1D2F79E0A700082EA6 /* Frameworks */,
 				926D5C1E2F79E0A700082EA6 /* Resources */,
+				92CF35AD2FBA66B900F39E31 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				92CF35AB2FBA66B900F39E31 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				926D5C222F79E0A700082EA6 /* tuppence */,
@@ -70,6 +150,28 @@
 			productReference = 926D5C202F79E0A700082EA6 /* tuppence.app */;
 			productType = "com.apple.product-type.application";
 		};
+		92CF35992FBA66B800F39E31 /* TuppenceWidgetExtensionExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 92CF35B12FBA66B900F39E31 /* Build configuration list for PBXNativeTarget "TuppenceWidgetExtensionExtension" */;
+			buildPhases = (
+				92CF35962FBA66B800F39E31 /* Sources */,
+				92CF35972FBA66B800F39E31 /* Frameworks */,
+				92CF35982FBA66B800F39E31 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				92CF35A02FBA66B800F39E31 /* TuppenceWidgetExtension */,
+			);
+			name = TuppenceWidgetExtensionExtension;
+			packageProductDependencies = (
+			);
+			productName = TuppenceWidgetExtensionExtension;
+			productReference = 92CF359A2FBA66B800F39E31 /* TuppenceWidgetExtensionExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -77,11 +179,14 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2640;
+				LastSwiftUpdateCheck = 2650;
 				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					926D5C1F2F79E0A700082EA6 = {
 						CreatedOnToolsVersion = 26.4;
+					};
+					92CF35992FBA66B800F39E31 = {
+						CreatedOnToolsVersion = 26.5;
 					};
 				};
 			};
@@ -100,12 +205,20 @@
 			projectRoot = "";
 			targets = (
 				926D5C1F2F79E0A700082EA6 /* tuppence */,
+				92CF35992FBA66B800F39E31 /* TuppenceWidgetExtensionExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		926D5C1E2F79E0A700082EA6 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		92CF35982FBA66B800F39E31 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -122,7 +235,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		92CF35962FBA66B800F39E31 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		92CF35AB2FBA66B900F39E31 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 92CF35992FBA66B800F39E31 /* TuppenceWidgetExtensionExtension */;
+			targetProxy = 92CF35AA2FBA66B900F39E31 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		926D5C292F79E0A800082EA6 /* Debug */ = {
@@ -251,9 +379,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = tuppence/tuppence.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 272DTKZ3LF;
+				DEVELOPMENT_TEAM = D46CGU252B;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -284,9 +413,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = tuppence/tuppence.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 272DTKZ3LF;
+				DEVELOPMENT_TEAM = D46CGU252B;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -312,6 +442,70 @@
 			};
 			name = Release;
 		};
+		92CF35AE2FBA66B900F39E31 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = TuppenceWidgetExtensionExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = D46CGU252B;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = TuppenceWidgetExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = TuppenceWidgetExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.joshuarubin.tuppence.TuppenceWidgetExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		92CF35AF2FBA66B900F39E31 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = TuppenceWidgetExtensionExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = D46CGU252B;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = TuppenceWidgetExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = TuppenceWidgetExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.joshuarubin.tuppence.TuppenceWidgetExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -329,6 +523,15 @@
 			buildConfigurations = (
 				926D5C2C2F79E0A800082EA6 /* Debug */,
 				926D5C2D2F79E0A800082EA6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		92CF35B12FBA66B900F39E31 /* Build configuration list for PBXNativeTarget "TuppenceWidgetExtensionExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				92CF35AE2FBA66B900F39E31 /* Debug */,
+				92CF35AF2FBA66B900F39E31 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -14,10 +14,12 @@ struct tuppenceApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .task {
+                    _ = StoreKitManager.shared
+                }
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
-                // Reload settings from iOS Settings when app becomes active
                 AppSettings.shared.loadFromSettings()
             }
         }

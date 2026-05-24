@@ -9,6 +9,7 @@ enum Page: String, CaseIterable {
     case amount = "Amount"
     case analysis = "Analysis"
     case spendings = "Spendings"
+    case settings = "Settings"
 }
 
 enum AmountDisplay: String, CaseIterable {
@@ -67,6 +68,8 @@ struct NavigationBar: View {
                         analysisHeading(fontSize: fontSize)
                     case .spendings:
                         spendingsHeading(fontSize: fontSize)
+                    case .settings:
+                        settingsHeading(fontSize: fontSize)
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -237,6 +240,53 @@ struct NavigationBar: View {
                     fontSize: fontSize
                 )
                 .fixedSize()
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Settings: "[Settings] for your app"
+    @ViewBuilder
+    private func settingsHeading(fontSize: CGFloat) -> some View {
+        VStack(spacing: 4) {
+            // Line 1: "Settings for"
+            HStack(spacing: 0) {
+                ScrollableText(
+                    options: Page.allCases.map { $0.rawValue },
+                    selectedIndex: Binding(
+                        get: { Page.allCases.firstIndex(of: currentPage) ?? 0 },
+                        set: { currentPage = Page.allCases[$0] }
+                    ),
+                    fontSize: fontSize
+                )
+                .fixedSize()
+
+                Text(" for")
+                    .font(Theme.Fonts.heading(size: fontSize))
+                    .foregroundColor(Theme.headingColor(for: colorScheme))
+                    .shadow(
+                        color: Theme.shadowColor(for: colorScheme).opacity(0.3),
+                        radius: Theme.Layout.shadowRadius,
+                        x: Theme.Layout.shadowX,
+                        y: Theme.Layout.shadowY
+                    )
+                    .fixedSize()
+            }
+            .frame(maxWidth: .infinity)
+
+            // Line 2: "your app"
+            HStack(spacing: 0) {
+                Text("your app")
+                    .font(Theme.Fonts.heading(size: fontSize))
+                    .foregroundColor(Theme.headingColor(for: colorScheme))
+                    .shadow(
+                        color: Theme.shadowColor(for: colorScheme).opacity(0.3),
+                        radius: Theme.Layout.shadowRadius,
+                        x: Theme.Layout.shadowX,
+                        y: Theme.Layout.shadowY
+                    )
+                    .fixedSize()
             }
             .frame(maxWidth: .infinity)
         }

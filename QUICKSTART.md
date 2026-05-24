@@ -6,6 +6,7 @@ Get up and running with Tuppence in 5 minutes.
 
 Tuppence is a multi-user budgeting app with:
 - **Authentication:** Session-based auth with household sharing
+- **Subscriptions:** Three-tier pricing (Free, Premium, Pro) via Stripe
 - **Backend:** FastAPI + PostgreSQL with multi-tenant isolation
 - **Frontend:** SwiftUI iOS app with login/signup
 - **Integration:** REST API with secure session tokens
@@ -16,6 +17,7 @@ Tuppence is a multi-user budgeting app with:
 - Python 3.9+
 - PostgreSQL
 - OpenAI API key
+- Stripe account (for subscriptions)
 
 ### Frontend
 - macOS with Xcode 16+
@@ -137,7 +139,46 @@ if self.budgets.isEmpty {
 }
 ```
 
-### Step 7: Add Spending via Shortcuts
+### Step 7: Upgrade to Premium/Pro (Optional)
+
+Tuppence offers three subscription tiers:
+
+**FREE (Default)**
+- Basic expense tracking
+- Up to 3 budgets
+- Single user only
+- 7 days of history
+
+**PREMIUM ($4.99/month or $49/year)**
+- Unlimited budgets
+- Advanced analytics
+- Unlimited history
+- CSV export
+- Priority support
+
+**PRO ($9.99/month or $99/year)**
+- All Premium features
+- Household sharing (unlimited members)
+- API access
+- Custom categories
+- White-label reports
+
+**To Upgrade:**
+
+1. Open app Settings page
+2. Tap "Manage Subscription"
+3. View pricing tiers and features
+4. Tap "Subscribe" on desired tier
+5. Complete payment via Stripe
+6. Your household is immediately upgraded!
+
+**Notes:**
+- Only household owners can manage subscriptions
+- All household members share subscription benefits
+- Cancel anytime via Customer Portal
+- Subscription is household-level (not per-user)
+
+### Step 8: Add Spending via Shortcuts
 
 1. Open **Shortcuts** app on iOS
 2. Tap "+" to create new shortcut
@@ -149,7 +190,7 @@ if self.budgets.isEmpty {
 5. Save shortcut
 6. Run it to add your first spending!
 
-### Step 8: Explore the App
+### Step 9: Explore the App
 
 **Amount Page:**
 - View total amounts per budget
@@ -168,7 +209,7 @@ if self.budgets.isEmpty {
 - Pull down to refresh
 - Scroll month to see past months
 
-### Step 9: Add Widget (Optional)
+### Step 10: Add Widget (Optional)
 
 1. Long press on home screen
 2. Tap "+" in top left
@@ -220,6 +261,32 @@ Expected response:
    - Updates every 15 minutes
 
 ## 📱 Common Workflows
+
+### Managing Subscription
+
+**View Current Subscription:**
+1. Open app Settings page
+2. See current tier displayed at top
+3. View active features for your tier
+
+**Upgrade Subscription:**
+1. Settings → "Manage Subscription"
+2. Tap "Subscribe" on desired tier
+3. Complete payment via Stripe checkout
+4. Return to app - tier updates immediately
+
+**Change Payment Method:**
+1. Settings → "Manage Subscription"
+2. Tap "Customer Portal"
+3. Update payment method in Stripe portal
+4. Changes take effect immediately
+
+**Cancel Subscription:**
+1. Settings → "Manage Subscription"
+2. Tap "Customer Portal"
+3. Cancel subscription in Stripe portal
+4. Access continues until end of billing period
+5. Then reverts to FREE tier
 
 ### Adding Daily Spending
 
@@ -337,11 +404,18 @@ Expected response:
 
 ## 📚 Documentation
 
+### General
 - **Frontend:** `frontend/README.md`
 - **Backend:** `backend/README.md`
 - **API Reference:** `backend/API_REFERENCE.md`
 - **Integration Notes:** `frontend/tuppence/tuppence/documents/FRONTEND_TO_BACKEND_NOTES.md`
 - **Implementation Summary:** `frontend/IMPLEMENTATION_SUMMARY.md`
+
+### Subscriptions
+- **Backend Implementation:** `backend/STRIPE_IMPLEMENTATION.md`
+- **Database Schema:** `backend/SUBSCRIPTION_SCHEMA_DESIGN.md`
+- **Test Suite:** `backend/SUBSCRIPTION_TESTS.md`
+- **Frontend Implementation:** `frontend/SUBSCRIPTION_IMPLEMENTATION.md`
 
 ## 🎉 You're Ready!
 

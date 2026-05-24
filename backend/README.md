@@ -5,6 +5,7 @@ FastAPI backend for Tuppence personal budgeting app with AI-powered spending cat
 ## Features
 
 - **Multi-tenant Authentication:** Session-based auth with household sharing
+- **Stripe Subscriptions:** Three-tier pricing (Free, Premium, Pro) with Stripe integration
 - **Single Source of Truth:** Ledger with SQL-derived totals
 - **AI Categorization:** OpenAI gpt-4o-mini with intelligent caching
 - **Budget Automation:** Monthly budget additions (runs on first of month)
@@ -18,6 +19,7 @@ FastAPI backend for Tuppence personal budgeting app with AI-powered spending cat
 - Python 3.9+
 - PostgreSQL database
 - OpenAI API key
+- Stripe account (for subscription features)
 
 ### Installation
 
@@ -218,7 +220,101 @@ Token can only be used once and expires after 7 days.
 - **Sliding Expiration:** Active users stay logged in, inactive sessions expire
 - **Database Isolation:** Middleware enforces household-level data isolation
 
+## Subscriptions
+
+### Subscription Tiers
+
+Tuppence offers three subscription tiers:
+
+**FREE (Default)**
+- Basic expense tracking
+- Up to 3 budgets
+- Single user only
+- 7 days of history
+
+**PREMIUM ($4.99/month or $49/year)**
+- Unlimited budgets
+- Advanced analytics
+- Unlimited history
+- CSV export
+- Priority support
+
+**PRO ($9.99/month or $99/year)**
+- All Premium features
+- Household sharing (unlimited members)
+- API access
+- Custom categories
+- White-label reports
+
+### Stripe Integration
+
+Subscriptions are managed via Stripe with the following flow:
+
+1. **Frontend** → `GET /subscriptions/pricing` → Shows available tiers
+2. **User selects tier** → `POST /subscriptions/checkout` → Returns Stripe checkout URL
+3. **User completes payment** on Stripe-hosted checkout page
+4. **Stripe webhook** → `POST /subscriptions/webhook` → Updates subscription in database
+5. **Frontend** → `GET /subscriptions/status` → Shows updated tier
+
+### Environment Variables
+
+Required Stripe configuration:
+
+```bash
+STRIPE_SECRET_KEY=sk_live_...                    # From Stripe dashboard
+STRIPE_PUBLISHABLE_KEY=pk_live_...              # For frontend Stripe.js
+STRIPE_WEBHOOK_SECRET=whsec_...                 # From webhook configuration
+STRIPE_PREMIUM_MONTHLY_PRICE_ID=price_...       # Create in Stripe dashboard
+STRIPE_PREMIUM_YEARLY_PRICE_ID=price_...        # Create in Stripe dashboard
+STRIPE_PRO_MONTHLY_PRICE_ID=price_...           # Create in Stripe dashboard
+STRIPE_PRO_YEARLY_PRICE_ID=price_...            # Create in Stripe dashboard
+```
+
+### Webhook Setup
+
+Configure webhook in Stripe dashboard:
+
+**Webhook URL:** `https://your-domain.com/subscriptions/webhook`
+
+**Events to subscribe:**
+- `checkout.session.completed`
+- `customer.subscription.created`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+- `invoice.payment_succeeded`
+- `invoice.payment_failed`
+
+### Subscription Management
+
+- Only household **owners** can manage subscriptions
+- Members share subscription benefits
+- Subscription is **household-level** (not per-user)
+- Customer portal allows payment method updates and cancellation
+
+For detailed implementation guide, see:
+- `STRIPE_IMPLEMENTATION.md` - Backend implementation details
+- `SUBSCRIPTION_SCHEMA_DESIGN.md` - Database schema documentation
+- `SUBSCRIPTION_TESTS.md` - Test suite documentation
+
 ## API Endpoints
+
+### Authentication
+- `POST /auth/register` - Register new user (creates household or joins existing)
+- `POST /auth/login` - Login with email/password
+- `POST /auth/logout` - Logout and invalidate session
+- `POST /auth/apple` - Sign in with Apple (iOS)
+
+### Household Sharing
+- `POST /households/generate_token` - Generate sharing token (owner only)
+- `POST /households/join` - Join household via token
+
+### Subscriptions (Stripe)
+- `GET /subscriptions/status` - Get current subscription tier and status
+- `GET /subscriptions/pricing` - Get available pricing tiers and features
+- `POST /subscriptions/checkout` - Create Stripe checkout session (owner only)
+- `POST /subscriptions/portal` - Create customer portal session (owner only)
+- `POST /subscriptions/webhook` - Stripe webhook endpoint (signature verified)
+- `GET /subscriptions/publishable-key` - Get Stripe publishable key for frontend
 
 ### Core Data
 - `GET /amounts` - Total amount left per budget for current year
@@ -270,6 +366,10 @@ pytest --cov=app tests/
 - **household_members** - Many-to-many relationship (user ↔ household) with roles
 - **sessions** - Active session tokens (UUID, sliding 30-day expiration)
 - **sharing_tokens** - One-time tokens for joining households (7-day expiration)
+
+### Subscriptions (Stripe)
+- **subscriptions** - Household subscription status (tier, Stripe IDs, billing period)
+- **webhook_events** - Stripe webhook event log (idempotent processing)
 
 ### Budget & Spending Data
 - **ledger** - Single source of truth for all transactions (household-scoped)

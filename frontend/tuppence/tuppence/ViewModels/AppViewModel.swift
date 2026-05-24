@@ -7,6 +7,10 @@ import Combine
 import Foundation
 import SwiftUI
 
+extension Notification.Name {
+    static let budgetsDidChange = Notification.Name("budgetsDidChange")
+}
+
 @MainActor
 class AppViewModel: ObservableObject {
     @Published var budgets: [Budget] = []
@@ -34,6 +38,21 @@ class AppViewModel: ObservableObject {
             name: UIApplication.willEnterForegroundNotification,
             object: nil
         )
+
+        // Observe budget changes from SettingsView
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleBudgetsChanged),
+            name: .budgetsDidChange,
+            object: nil
+        )
+    }
+
+    @objc private func handleBudgetsChanged() {
+        Task {
+            await loadBudgets()
+            await loadAmounts()
+        }
     }
 
     @objc private func handleAppLaunch() {
@@ -50,7 +69,7 @@ class AppViewModel: ObservableObject {
 
     func syncAndLoad() async {
         await syncSettings()
-        await syncBudgets()
+        await loadBudgets()
         await checkAutomations()
         await loadAmounts()
     }
@@ -65,13 +84,14 @@ class AppViewModel: ObservableObject {
         }
     }
 
-    private func syncBudgets() async {
-        guard !settings.budgets.isEmpty else { return }
-
+    private func loadBudgets() async {
         do {
-            try await apiService.syncBudgets(settings.budgets)
+            let fetchedBudgets = try await apiService.listBudgets()
+            budgets = fetchedBudgets
         } catch {
-            print("Failed to sync budgets: \(error)")
+            print("Failed to load budgets: \(error)")
+            // Fallback to empty budgets on error
+            budgets = []
         }
     }
 
@@ -86,6 +106,12 @@ class AppViewModel: ObservableObject {
     // MARK: - Load Data
 
     func loadAmounts() async {
+        guard AuthenticationManager.shared.isAuthenticated else {
+            errorMessage = "Please sign in to view your budget data"
+            budgets = []
+            return
+        }
+
         isLoading = true
         errorMessage = nil
 
@@ -100,6 +126,12 @@ class AppViewModel: ObservableObject {
     }
 
     func loadLedger(for month: Date?) async {
+        guard AuthenticationManager.shared.isAuthenticated else {
+            errorMessage = "Please sign in to view your spending history"
+            ledgerEntries = []
+            return
+        }
+
         isLoading = true
         errorMessage = nil
 
@@ -114,6 +146,12 @@ class AppViewModel: ObservableObject {
     }
 
     func loadCategoryMap(for month: Date?, budgetEmoji: String) async {
+        guard AuthenticationManager.shared.isAuthenticated else {
+            errorMessage = "Please sign in to view your budget analysis"
+            categoryData = []
+            return
+        }
+
         isLoading = true
         errorMessage = nil
 
