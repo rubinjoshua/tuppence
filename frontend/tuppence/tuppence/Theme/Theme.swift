@@ -9,20 +9,23 @@ struct Theme {
     // MARK: - Colors
 
     struct Colors {
-        // Light Mode
+        // Light Mode (unchanged — Wes Anderson palette)
         static let lightBackground = Color(hex: "#D9CA94")  // Pale Lemon Yellow
         static let lightText = Color(hex: "#334E63")        // Dark Medici Blue
         static let lightHeading = Color(hex: "#CD1D05")     // Red Orange
         static let lightShadow = Color(hex: "#AC8546")      // Isabella Color
+        static let lightDeleteRed = Color(hex: "#CD1D05")   // Red Orange
 
-        // Dark Mode
-        static let darkBackground = Color(hex: "#AC8546")   // Isabella Color
-        static let darkText = Color(hex: "#D9CA94")         // Pale Lemon Yellow
-        static let darkHeading = Color(hex: "#D9CA94")      // Pale Lemon Yellow (all texts switch in dark mode)
-        static let darkShadow = Color(hex: "#334E63")       // Dark Medici Blue
+        // Dark Mode — pure-black OLED background with shifted palette.
+        // See frontend/DARK_MODE_PALETTE.md for rationale.
+        static let darkBackground = Color.black                  // #000000 — true OLED black
+        static let darkText = Color(hex: "#E8DCB0")              // Pale lemon, lifted for AA contrast
+        static let darkHeading = Color(hex: "#FF7A5E")           // Red-orange lifted + desaturated for retina comfort
+        static let darkShadow = Color.white.opacity(0.08)        // Subtle white-glow elevation (drop shadows are invisible on pure black)
+        static let darkDeleteRed = Color(hex: "#FF6B5C")         // Delete red lifted for higher contrast on black
 
-        // Delete Color
-        static let deleteRed = Color(hex: "#CD1D05")        // Red Orange
+        // Legacy accessor — prefer deleteRedColor(for:) below.
+        static let deleteRed = Color(hex: "#CD1D05")
     }
 
     // MARK: - Fonts
@@ -59,6 +62,10 @@ struct Theme {
         colorScheme == .dark ? Colors.darkShadow : Colors.lightShadow
     }
 
+    static func deleteRedColor(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Colors.darkDeleteRed : Colors.lightDeleteRed
+    }
+
     // MARK: - Layout Constants
 
     struct Layout {
@@ -87,11 +94,12 @@ struct ThemedText: ViewModifier {
     let size: CGFloat
 
     func body(content: Content) -> some View {
-        content
+        let shadowOpacity: Double = colorScheme == .dark ? 1.0 : 0.3
+        return content
             .font(Theme.Fonts.body(size: size))
             .foregroundColor(Theme.textColor(for: colorScheme))
             .shadow(
-                color: Theme.shadowColor(for: colorScheme).opacity(0.3),
+                color: Theme.shadowColor(for: colorScheme).opacity(shadowOpacity),
                 radius: Theme.Layout.shadowRadius,
                 x: Theme.Layout.shadowX,
                 y: Theme.Layout.shadowY
@@ -104,11 +112,12 @@ struct ThemedHeading: ViewModifier {
     let size: CGFloat
 
     func body(content: Content) -> some View {
-        content
+        let shadowOpacity: Double = colorScheme == .dark ? 1.0 : 0.3
+        return content
             .font(Theme.Fonts.heading(size: size))
             .foregroundColor(Theme.headingColor(for: colorScheme))
             .shadow(
-                color: Theme.shadowColor(for: colorScheme).opacity(0.3),
+                color: Theme.shadowColor(for: colorScheme).opacity(shadowOpacity),
                 radius: Theme.Layout.shadowRadius,
                 x: Theme.Layout.shadowX,
                 y: Theme.Layout.shadowY
