@@ -1,7 +1,7 @@
 """Ledger table - Single source of truth for all transactions"""
 
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Index
-from sqlalchemy.dialects.postgresql import UUID
+from app.models._types import GUID
 import uuid
 from datetime import datetime, timezone
 
@@ -29,9 +29,9 @@ class LedgerEntry(Base):
 
     __tablename__ = "ledger"
 
-    uuid = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    uuid = Column(GUID(), primary_key=True, default=uuid.uuid4, index=True)
     household_id = Column(
-        UUID(as_uuid=True),
+        GUID(),
         ForeignKey('households.id', ondelete='CASCADE'),
         nullable=False,
         index=True,

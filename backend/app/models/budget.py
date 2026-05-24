@@ -1,7 +1,7 @@
 """Budget table - Monthly budget definitions"""
 
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, UniqueConstraint, Index
-from sqlalchemy.dialects.postgresql import UUID
+from app.models._types import GUID
 from datetime import datetime, timezone
 
 from app.database import Base
@@ -30,7 +30,7 @@ class Budget(Base):
     __tablename__ = "budgets"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    household_id = Column(UUID(as_uuid=True), ForeignKey('households.id', ondelete='CASCADE'), nullable=False, index=True)
+    household_id = Column(GUID(), ForeignKey('households.id', ondelete='CASCADE'), nullable=False, index=True)
     emoji = Column(String(10), nullable=False, index=True)
     label = Column(String(100), nullable=False)
     monthly_amount = Column(Integer, nullable=False)

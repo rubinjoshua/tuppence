@@ -2,12 +2,11 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session as DBSession
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from datetime import datetime, timedelta, timezone
 import uuid
 
 from app.database import get_db
+from app.limiter import limiter
 from app.models.user import User
 from app.models.household import Household, HouseholdMember
 from app.models.session import Session
@@ -22,9 +21,6 @@ from app.utils.auth import hash_password, verify_password
 from app.utils.apple_auth import extract_apple_user_info
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
-
-# Rate limiter: 5 requests per minute for login/register
-limiter = Limiter(key_func=get_remote_address)
 
 
 def create_session(db: DBSession, user_id: uuid.UUID, household_id: uuid.UUID) -> Session:

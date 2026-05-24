@@ -1,7 +1,7 @@
 """User model - authentication and user accounts"""
 
 from sqlalchemy import Column, String, Boolean, DateTime, CheckConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from app.models._types import GUID
 import uuid
 from datetime import datetime, timezone
 
@@ -30,7 +30,7 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=True)
     apple_id = Column(String(255), unique=True, nullable=True)

@@ -14,7 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     Enum as SQLEnum,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from app.models._types import GUID
 
 from app.database import Base
 
@@ -58,7 +58,7 @@ class Subscription(Base):
     __tablename__ = "subscriptions"
 
     household_id = Column(
-        UUID(as_uuid=True),
+        GUID(),
         ForeignKey('households.id', ondelete='CASCADE'),
         primary_key=True,
     )
@@ -122,7 +122,7 @@ class AppleNotification(Base):
 
     __tablename__ = "apple_notifications"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
     notification_uuid = Column(String(255), nullable=False, unique=True, index=True)
     notification_type = Column(String(100), nullable=False, index=True)
     subtype = Column(String(100), nullable=True)

@@ -44,15 +44,8 @@ def get_session_local():
     return _SessionLocal
 
 
-# For backwards compatibility
-@property
-def engine():
-    return get_engine()
-
-
-@property
 def SessionLocal():
-    return get_session_local()
+    return get_session_local()()
 
 
 def get_db() -> Session:

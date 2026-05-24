@@ -1,7 +1,7 @@
 """Settings table - Per-household application settings"""
 
 from sqlalchemy import Column, String, Date, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
+from app.models._types import GUID
 
 from app.database import Base
 
@@ -20,7 +20,7 @@ class Settings(Base):
     __tablename__ = "settings"
 
     household_id = Column(
-        UUID(as_uuid=True),
+        GUID(),
         ForeignKey('households.id', ondelete='CASCADE'),
         primary_key=True,
     )

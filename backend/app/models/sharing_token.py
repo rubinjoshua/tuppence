@@ -1,7 +1,7 @@
 """Sharing token model - household invitation tokens"""
 
 from sqlalchemy import Column, String, DateTime, Boolean, ForeignKey, Index, CheckConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from app.models._types import GUID
 import uuid
 from datetime import datetime, timezone
 
@@ -34,14 +34,14 @@ class SharingToken(Base):
 
     __tablename__ = "sharing_tokens"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    household_id = Column(UUID(as_uuid=True), ForeignKey('households.id', ondelete='CASCADE'), nullable=False, index=True)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    household_id = Column(GUID(), ForeignKey('households.id', ondelete='CASCADE'), nullable=False, index=True)
     token = Column(String(64), unique=True, nullable=False, index=True)
-    created_by = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=False)
+    created_by = Column(GUID(), ForeignKey('users.id'), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     expires_at = Column(DateTime(timezone=True), nullable=False)
     used_at = Column(DateTime(timezone=True), nullable=True)
-    used_by = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=True)
+    used_by = Column(GUID(), ForeignKey('users.id'), nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
 
     __table_args__ = (
