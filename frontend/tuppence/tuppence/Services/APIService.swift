@@ -5,12 +5,31 @@
 
 import Foundation
 
-enum APIError: Error {
+enum APIError: LocalizedError {
     case invalidURL
     case requestFailed(Error)
     case invalidResponse
     case decodingFailed(Error)
     case httpError(Int, String)
+    case notAuthenticated
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidURL:
+            return "Invalid API URL"
+        case .requestFailed(let error):
+            return "Network request failed: \(error.localizedDescription)"
+        case .invalidResponse:
+            return "Server returned a non-HTTP response"
+        case .decodingFailed(let error):
+            return "Failed to decode response: \(error.localizedDescription)"
+        case .httpError(let code, let body):
+            let snippet = body.count > 200 ? String(body.prefix(200)) + "…" : body
+            return "HTTP \(code): \(snippet)"
+        case .notAuthenticated:
+            return "Not signed in — open the Tuppence app and sign in before using this shortcut"
+        }
+    }
 }
 
 class APIService {

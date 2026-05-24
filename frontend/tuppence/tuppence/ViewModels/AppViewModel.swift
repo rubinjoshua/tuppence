@@ -187,18 +187,7 @@ class AppViewModel: ObservableObject {
             await loadLedger(for: nil)
             await loadAmounts()
         } catch let error as APIError {
-            switch error {
-            case .invalidURL:
-                errorMessage = "Failed to add spending: Invalid URL"
-            case .requestFailed(let underlyingError):
-                errorMessage = "Failed to add spending: Request failed - \(underlyingError.localizedDescription)"
-            case .invalidResponse:
-                errorMessage = "Failed to add spending: Invalid response from server"
-            case .decodingFailed(let underlyingError):
-                errorMessage = "Failed to add spending: Could not decode response - \(underlyingError.localizedDescription)"
-            case .httpError(let code, let message):
-                errorMessage = "Failed to add spending: HTTP \(code) - \(message)"
-            }
+            errorMessage = "Failed to add spending: \(error.localizedDescription)"
             print("API Error: \(errorMessage ?? "unknown")")
         } catch {
             errorMessage = "Failed to add spending: \(error.localizedDescription)"

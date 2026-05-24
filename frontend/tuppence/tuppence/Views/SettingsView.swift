@@ -133,17 +133,17 @@ struct SettingsView: View {
     }
 
     private func updateBudget(_ budget: Budget, emoji: String, label: String, monthlyAmount: Int) async {
-        guard let id = budget.id else { return }
+        guard let backendId = budget.backendId else { return }
 
         do {
             let updatedBudget = try await APIService.shared.updateBudget(
-                id: id,
+                id: backendId,
                 emoji: emoji,
                 label: label,
                 monthlyAmount: monthlyAmount
             )
             await MainActor.run {
-                if let index = budgets.firstIndex(where: { $0.id == id }) {
+                if let index = budgets.firstIndex(where: { $0.backendId == backendId }) {
                     budgets[index] = updatedBudget
                 }
                 editingBudget = nil
@@ -157,12 +157,12 @@ struct SettingsView: View {
     }
 
     private func deleteBudget(_ budget: Budget) async {
-        guard let id = budget.id else { return }
+        guard let backendId = budget.backendId else { return }
 
         do {
-            try await APIService.shared.deleteBudget(id: id)
+            try await APIService.shared.deleteBudget(id: backendId)
             await MainActor.run {
-                budgets.removeAll { $0.id == id }
+                budgets.removeAll { $0.backendId == backendId }
                 NotificationCenter.default.post(name: .budgetsDidChange, object: nil)
             }
         } catch {
