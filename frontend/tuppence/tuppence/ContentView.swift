@@ -9,14 +9,12 @@ struct ContentView: View {
     @StateObject private var viewModel = AppViewModel()
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var authManager = AuthenticationManager.shared
-    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
 
     @State private var currentPage: Page = .amount
     @State private var amountDisplay: AmountDisplay = .total
     @State private var selectedBudgetIndex = 0
     @State private var selectedMonthIndex = 0
     @State private var isShowingAddExpense = false
-    @State private var showSubscriptionPaywall = false
 
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.scenePhase) var scenePhase
@@ -151,15 +149,11 @@ struct ContentView: View {
         )
         .task {
             await viewModel.syncAndLoad()
-            await subscriptionManager.checkSubscriptionStatus()
-            checkSubscriptionAccess()
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 Task {
                     await viewModel.syncAndLoad()
-                    await subscriptionManager.checkSubscriptionStatus()
-                    checkSubscriptionAccess()
                 }
             }
         }
@@ -172,9 +166,6 @@ struct ContentView: View {
                 Text(error)
             }
         }
-        .sheet(isPresented: $showSubscriptionPaywall) {
-            SubscriptionView()
-        }
     }
 
     @ViewBuilder
@@ -186,13 +177,6 @@ struct ContentView: View {
                 .multilineTextAlignment(.center)
                 .padding()
             Spacer()
-        }
-    }
-
-    private func checkSubscriptionAccess() {
-        // Only require subscription if user is authenticated
-        if authManager.isAuthenticated && !subscriptionManager.isActive {
-            showSubscriptionPaywall = true
         }
     }
 }

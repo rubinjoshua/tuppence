@@ -4,12 +4,10 @@
 //
 
 import SwiftUI
-import StoreKit
 
 struct SettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var authManager = AuthenticationManager.shared
-    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     @Environment(\.colorScheme) var colorScheme
 
     @State private var showLogin = false
@@ -23,7 +21,6 @@ struct SettingsView: View {
     @State private var joinTokenInput = ""
     @State private var joinError: String?
     @State private var isJoining = false
-    @State private var manageSubscriptionError: String?
     @State private var reportEmail = ""
     @State private var selectedYear = Calendar.current.component(.year, from: Date())
     @State private var isExporting = false
@@ -43,13 +40,6 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 24) {
                 // Authentication Section
                 authenticationSection
-
-                Divider()
-                    .background(Theme.textColor(for: colorScheme).opacity(0.3))
-                    .padding(.horizontal, -Theme.Layout.screenPadding)
-
-                // Subscription Section
-                subscriptionSection
 
                 Divider()
                     .background(Theme.textColor(for: colorScheme).opacity(0.3))
@@ -88,7 +78,6 @@ struct SettingsView: View {
             loadEmailFromSettings()
             Task {
                 await loadBudgets()
-                await subscriptionManager.checkSubscriptionStatus()
             }
         }
     }
@@ -452,109 +441,6 @@ struct SettingsView: View {
                 joinError = error.localizedDescription
                 isJoining = false
             }
-        }
-    }
-
-    // MARK: - Subscription Section
-
-    @ViewBuilder
-    private var subscriptionSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Subscription")
-                .themedHeading(size: 20)
-
-            if !authManager.isAuthenticated {
-                Text("Sign in to manage your subscription")
-                    .themedText(size: 14)
-                    .opacity(0.6)
-            } else if subscriptionManager.isLoading {
-                HStack {
-                    Spacer()
-                    ProgressView()
-                    Spacer()
-                }
-                .padding(.vertical, 20)
-            } else if let status = subscriptionManager.subscriptionStatus {
-                if status.isActive {
-                    // Active subscription
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                            Text("Premium Active")
-                                .themedText(size: 16)
-                            Spacer()
-                        }
-
-                        HStack {
-                            Text("Plan:")
-                                .themedText(size: 15)
-                            Spacer()
-                            Text(status.tier.rawValue.capitalized)
-                                .themedText(size: 15)
-                        }
-
-                        if let endDate = status.currentPeriodEnd {
-                            HStack {
-                                Text("Renews:")
-                                    .themedText(size: 15)
-                                Spacer()
-                                Text(endDate.formatted(date: .abbreviated, time: .omitted))
-                                    .themedText(size: 15)
-                            }
-                        }
-
-                        if let autoRenew = status.autoRenewStatus, !autoRenew {
-                            Text("Subscription will not auto-renew at the end of the current period")
-                                .themedText(size: 13)
-                                .foregroundColor(Theme.Colors.deleteRed)
-                                .padding(.top, 4)
-                        }
-
-                        Button(action: {
-                            Task { await openManageSubscriptions() }
-                        }) {
-                            Text("Manage Subscription")
-                                .themedText(size: 16)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(Theme.headingColor(for: colorScheme).opacity(0.2))
-                                .cornerRadius(8)
-                        }
-                    }
-                } else {
-                    // No active subscription
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Get Premium to unlock all features")
-                            .themedText(size: 14)
-
-                        NavigationLink(destination: SubscriptionView()) {
-                            Text("View Plans")
-                                .themedText(size: 16)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(Theme.headingColor(for: colorScheme).opacity(0.2))
-                                .cornerRadius(8)
-                        }
-                    }
-                }
-            }
-        }
-        .alert("Error", isPresented: .constant(manageSubscriptionError != nil)) {
-            Button("OK") { manageSubscriptionError = nil }
-        } message: {
-            Text(manageSubscriptionError ?? "")
-        }
-    }
-
-    private func openManageSubscriptions() async {
-        guard let scene = UIApplication.shared.connectedScenes
-            .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene
-        else { return }
-        do {
-            try await AppStore.showManageSubscriptions(in: scene)
-        } catch {
-            manageSubscriptionError = "Could not open subscription management: \(error.localizedDescription)"
         }
     }
 
