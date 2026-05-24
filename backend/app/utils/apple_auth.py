@@ -1,5 +1,7 @@
 """Apple Sign In authentication utilities"""
 
+import hashlib
+import hmac
 import jwt
 import requests
 from typing import Optional, Dict, Any
@@ -34,7 +36,7 @@ def get_apple_public_keys() -> Dict[str, Any]:
         )
 
 
-def verify_apple_identity_token(identity_token: str) -> Dict[str, Any]:
+def verify_apple_identity_token(identity_token: str, expected_nonce: Optional[str] = None) -> Dict[str, Any]:
     """
     Verify Apple identity token (JWT) and extract claims.
 
@@ -107,6 +109,20 @@ def verify_apple_identity_token(identity_token: str) -> Dict[str, Any]:
                 detail="Invalid identity token: missing subject (Apple user ID)"
             )
 
+        if expected_nonce is not None:
+            claim_nonce = decoded_token.get("nonce")
+            if not claim_nonce:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid identity token: nonce claim missing but expected"
+                )
+            expected_hash = hashlib.sha256(expected_nonce.encode("utf-8")).hexdigest()
+            if not hmac.compare_digest(claim_nonce, expected_hash):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid identity token: nonce mismatch"
+                )
+
         return decoded_token
 
     except jwt.ExpiredSignatureError:
@@ -126,13 +142,18 @@ def verify_apple_identity_token(identity_token: str) -> Dict[str, Any]:
         )
 
 
-def extract_apple_user_info(identity_token: str, full_name: Optional[str] = None) -> Dict[str, Any]:
+def extract_apple_user_info(
+    identity_token: str,
+    full_name: Optional[str] = None,
+    nonce: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Extract user information from Apple identity token.
 
     Args:
         identity_token: The verified identity token
         full_name: Optional full name from Apple authorization
+        nonce: Optional raw nonce; if provided, sha256(nonce) must match JWT nonce claim
 
     Returns:
         Dictionary with user info:
@@ -141,8 +162,7 @@ def extract_apple_user_info(identity_token: str, full_name: Optional[str] = None
         - email_verified: Whether email is verified by Apple
         - full_name: User's full name (if provided)
     """
-    # Verify token and get claims
-    claims = verify_apple_identity_token(identity_token)
+    claims = verify_apple_identity_token(identity_token, expected_nonce=nonce)
 
     return {
         "apple_id": claims["sub"],

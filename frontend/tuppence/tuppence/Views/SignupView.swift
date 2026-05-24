@@ -133,9 +133,15 @@ struct SignupView: View {
                         .opacity(0.6)
 
                     SignInWithAppleButton(.signUp) { request in
-                        request.requestedScopes = [.email, .fullName]
+                        authManager.prepareAppleRequest(request)
                     } onCompletion: { result in
-                        handleAppleSignIn(result)
+                        let token = householdToken.isEmpty ? nil : householdToken
+                        Task {
+                            await authManager.handleAppleCompletion(result, householdToken: token)
+                            if authManager.isAuthenticated {
+                                dismiss()
+                            }
+                        }
                     }
                     .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
                     .frame(height: 50)
@@ -153,82 +159,6 @@ struct SignupView: View {
                     Spacer(minLength: 40)
                 }
                 .padding(.horizontal, Theme.Layout.screenPadding)
-            }
-        }
-    }
-
-    private func handleAppleSignIn(_ result: Result<ASAuthorization, Error>) {
-        switch result {
-        case .success(let authorization):
-            print("[Apple Sign In] Authorization successful")
-            guard let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential else {
-                print("[Apple Sign In] Failed to get Apple ID credential")
-                authManager.errorMessage = "Apple Sign In failed: Invalid credential type"
-                return
-            }
-
-            guard let identityToken = appleIDCredential.identityToken else {
-                print("[Apple Sign In] Missing identity token")
-                authManager.errorMessage = "Apple Sign In failed: Missing identity token"
-                return
-            }
-
-            guard let tokenString = String(data: identityToken, encoding: .utf8) else {
-                print("[Apple Sign In] Failed to decode identity token")
-                authManager.errorMessage = "Apple Sign In failed: Invalid token encoding"
-                return
-            }
-
-            guard let authorizationCode = appleIDCredential.authorizationCode else {
-                print("[Apple Sign In] Missing authorization code")
-                authManager.errorMessage = "Apple Sign In failed: Missing authorization code"
-                return
-            }
-
-            guard let codeString = String(data: authorizationCode, encoding: .utf8) else {
-                print("[Apple Sign In] Failed to decode authorization code")
-                authManager.errorMessage = "Apple Sign In failed: Invalid code encoding"
-                return
-            }
-
-            let fullName = [
-                appleIDCredential.fullName?.givenName,
-                appleIDCredential.fullName?.familyName
-            ]
-            .compactMap { $0 }
-            .joined(separator: " ")
-
-            let token = householdToken.isEmpty ? nil : householdToken
-
-            print("[Apple Sign In] Processing with user: \(appleIDCredential.user)")
-            print("[Apple Sign In] Email: \(appleIDCredential.email ?? "not provided")")
-            print("[Apple Sign In] Full name: \(fullName.isEmpty ? "not provided" : fullName)")
-            print("[Apple Sign In] Household token: \(token != nil ? "provided" : "not provided")")
-
-            Task {
-                await authManager.appleSignIn(
-                    identityToken: tokenString,
-                    authorizationCode: codeString,
-                    fullName: fullName.isEmpty ? nil : fullName,
-                    householdToken: token
-                )
-                if authManager.isAuthenticated {
-                    dismiss()
-                }
-            }
-
-        case .failure(let error):
-            let nsError = error as NSError
-            print("[Apple Sign In] Error: \(error.localizedDescription)")
-            print("[Apple Sign In] Error code: \(nsError.code)")
-            print("[Apple Sign In] Error domain: \(nsError.domain)")
-
-            if nsError.code == 1000 {
-                authManager.errorMessage = "Apple Sign In setup required. Please check APPLE_SIGNIN_SETUP.md for configuration instructions."
-            } else if nsError.code == 1001 {
-                authManager.errorMessage = "Apple Sign In canceled"
-            } else {
-                authManager.errorMessage = "Apple Sign In error: \(error.localizedDescription)"
             }
         }
     }

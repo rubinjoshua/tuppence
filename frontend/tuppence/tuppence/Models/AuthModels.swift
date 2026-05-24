@@ -39,12 +39,14 @@ struct AppleSignInRequest: Codable {
     let authorizationCode: String
     let fullName: String?
     let householdToken: String?
+    let nonce: String?
 
     enum CodingKeys: String, CodingKey {
         case identityToken = "identity_token"
         case authorizationCode = "authorization_code"
         case fullName = "full_name"
         case householdToken = "household_token"
+        case nonce
     }
 }
 

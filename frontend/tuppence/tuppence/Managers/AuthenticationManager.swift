@@ -5,7 +5,10 @@
 
 import Foundation
 import Combine
+import AuthenticationServices
+import CryptoKit
 
+@MainActor
 class AuthenticationManager: ObservableObject {
     static let shared = AuthenticationManager()
 
@@ -16,9 +19,95 @@ class AuthenticationManager: ObservableObject {
 
     private let keychain = KeychainHelper.shared
     private let backendURL = AppSettings.shared.backendURL
+    private var pendingAppleNonce: String?
 
     private init() {
         checkAuthState()
+    }
+
+    // MARK: - Apple Sign In Helpers
+
+    func prepareAppleRequest(_ request: ASAuthorizationAppleIDRequest) {
+        let raw = Self.randomNonceString()
+        pendingAppleNonce = raw
+        request.requestedScopes = [.email, .fullName]
+        request.nonce = Self.sha256(raw)
+    }
+
+    func handleAppleCompletion(_ result: Result<ASAuthorization, Error>, householdToken: String?) async {
+        let nonce = pendingAppleNonce
+        pendingAppleNonce = nil
+
+        switch result {
+        case .success(let authorization):
+            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+                  let identityTokenData = credential.identityToken,
+                  let identityToken = String(data: identityTokenData, encoding: .utf8),
+                  let authCodeData = credential.authorizationCode,
+                  let authCode = String(data: authCodeData, encoding: .utf8) else {
+                errorMessage = "Apple Sign In failed: missing credential data"
+                return
+            }
+
+            let fullName = [credential.fullName?.givenName, credential.fullName?.familyName]
+                .compactMap { $0 }
+                .joined(separator: " ")
+
+            await appleSignIn(
+                identityToken: identityToken,
+                authorizationCode: authCode,
+                fullName: fullName.isEmpty ? nil : fullName,
+                householdToken: householdToken,
+                nonce: nonce
+            )
+
+        case .failure(let error):
+            if let asError = error as? ASAuthorizationError {
+                switch asError.code {
+                case .canceled:
+                    errorMessage = nil
+                case .failed:
+                    errorMessage = "Apple Sign In failed. Verify the capability is enabled in Xcode and the App ID."
+                case .invalidResponse:
+                    errorMessage = "Apple returned an invalid response."
+                case .notHandled:
+                    errorMessage = "Apple Sign In could not be handled. Please try again."
+                case .notInteractive:
+                    errorMessage = "Apple Sign In requires user interaction."
+                case .unknown:
+                    errorMessage = "Apple Sign In failed: \(error.localizedDescription)"
+                @unknown default:
+                    errorMessage = "Apple Sign In failed: \(error.localizedDescription)"
+                }
+            } else {
+                errorMessage = "Apple Sign In failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private static func randomNonceString(length: Int = 32) -> String {
+        precondition(length > 0)
+        let charset: [Character] = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._")
+        var result = ""
+        var remaining = length
+        while remaining > 0 {
+            var randoms = [UInt8](repeating: 0, count: 16)
+            let status = SecRandomCopyBytes(kSecRandomDefault, randoms.count, &randoms)
+            precondition(status == errSecSuccess)
+            for byte in randoms where remaining > 0 {
+                if byte < charset.count {
+                    result.append(charset[Int(byte) % charset.count])
+                    remaining -= 1
+                }
+            }
+        }
+        return result
+    }
+
+    private static func sha256(_ input: String) -> String {
+        let data = Data(input.utf8)
+        let hash = SHA256.hash(data: data)
+        return hash.compactMap { String(format: "%02x", $0) }.joined()
     }
 
     // MARK: - Auth State
@@ -85,21 +174,25 @@ class AuthenticationManager: ObservableObject {
 
     // MARK: - Apple Sign In
 
-    func appleSignIn(identityToken: String, authorizationCode: String, fullName: String?, householdToken: String?) async {
-        await MainActor.run { isLoading = true }
+    func appleSignIn(identityToken: String, authorizationCode: String, fullName: String?, householdToken: String?, nonce: String?) async {
+        isLoading = true
 
-        let result = await performAppleSignIn(identityToken: identityToken, authorizationCode: authorizationCode, fullName: fullName, householdToken: householdToken)
+        let result = await performAppleSignIn(
+            identityToken: identityToken,
+            authorizationCode: authorizationCode,
+            fullName: fullName,
+            householdToken: householdToken,
+            nonce: nonce
+        )
 
-        await MainActor.run {
-            isLoading = false
-            switch result {
-            case .success(let response):
-                saveAuthData(response)
-                checkAuthState()
-                errorMessage = nil
-            case .failure(let error):
-                errorMessage = error.localizedDescription
-            }
+        isLoading = false
+        switch result {
+        case .success(let response):
+            saveAuthData(response)
+            checkAuthState()
+            errorMessage = nil
+        case .failure(let error):
+            errorMessage = error.localizedDescription
         }
     }
 
@@ -247,7 +340,7 @@ class AuthenticationManager: ObservableObject {
         }
     }
 
-    private func performAppleSignIn(identityToken: String, authorizationCode: String, fullName: String?, householdToken: String?) async -> Result<AuthResponse, AuthError> {
+    private func performAppleSignIn(identityToken: String, authorizationCode: String, fullName: String?, householdToken: String?, nonce: String?) async -> Result<AuthResponse, AuthError> {
         let url = URL(string: "\(backendURL)/auth/apple-signin")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -257,7 +350,8 @@ class AuthenticationManager: ObservableObject {
             identityToken: identityToken,
             authorizationCode: authorizationCode,
             fullName: fullName,
-            householdToken: householdToken
+            householdToken: householdToken,
+            nonce: nonce
         )
         request.httpBody = try? JSONEncoder().encode(appleRequest)
 

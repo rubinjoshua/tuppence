@@ -259,7 +259,7 @@ async def apple_signin(
 
     # Verify Apple identity token and extract user info
     try:
-        user_info = extract_apple_user_info(data.identity_token, data.full_name)
+        user_info = extract_apple_user_info(data.identity_token, data.full_name, data.nonce)
     except HTTPException:
         raise
     except Exception as e:
