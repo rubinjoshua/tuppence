@@ -196,6 +196,22 @@ class AuthenticationManager: ObservableObject {
         }
     }
 
+    // MARK: - Household Updates
+
+    @MainActor
+    func updateHousehold(id: String, name: String) {
+        _ = keychain.save(id, for: KeychainHelper.Keys.householdId)
+        _ = keychain.save(name, for: KeychainHelper.Keys.householdName)
+        if let existing = currentUser {
+            currentUser = UserInfo(
+                userId: existing.userId,
+                email: existing.email,
+                householdId: id,
+                householdName: name
+            )
+        }
+    }
+
     // MARK: - Logout
 
     func logout() {

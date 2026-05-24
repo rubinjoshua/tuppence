@@ -15,7 +15,14 @@ struct SettingsView: View {
     @State private var showLogin = false
     @State private var showSignup = false
     @State private var showSignOutConfirmation = false
+    @State private var householdToken: String?
     @State private var householdTokenCopied = false
+    @State private var householdTokenError: String?
+    @State private var isGeneratingToken = false
+    @State private var showJoinHousehold = false
+    @State private var joinTokenInput = ""
+    @State private var joinError: String?
+    @State private var isJoining = false
     @State private var manageSubscriptionError: String?
     @State private var reportEmail = ""
     @State private var selectedYear = Calendar.current.component(.year, from: Date())
@@ -205,40 +212,17 @@ struct SettingsView: View {
                             .themedText(size: 15)
                     }
 
-                    // Household sharing token section
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Share Household")
-                            .themedText(size: 15)
+                    householdSharingSection
 
-                        HStack {
-                            // Mock token for now - will be generated from backend later
-                            Text("a1b2c3d4e5f6...")
-                                .font(.system(.body, design: .monospaced))
-                                .themedText(size: 14)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(Theme.textColor(for: colorScheme).opacity(0.1))
-                                .cornerRadius(8)
-
-                            Button(action: {
-                                UIPasteboard.general.string = "a1b2c3d4e5f6..."
-                                householdTokenCopied = true
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                    householdTokenCopied = false
-                                }
-                            }) {
-                                Image(systemName: householdTokenCopied ? "checkmark" : "doc.on.doc")
-                                    .foregroundColor(Theme.headingColor(for: colorScheme))
-                                    .frame(width: 40, height: 40)
-                                    .background(Theme.headingColor(for: colorScheme).opacity(0.1))
-                                    .cornerRadius(8)
-                            }
-                        }
-
-                        Text("Share this token with family members to invite them to your household.")
-                            .themedText(size: 12)
-                            .opacity(0.7)
-                            .fixedSize(horizontal: false, vertical: true)
+                    Button(action: {
+                        showJoinHousehold = true
+                    }) {
+                        Text("Join Another Household")
+                            .themedText(size: 16)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Theme.headingColor(for: colorScheme).opacity(0.15))
+                            .cornerRadius(8)
                     }
 
                     Button(action: {
@@ -289,6 +273,9 @@ struct SettingsView: View {
         .sheet(isPresented: $showSignup) {
             SignupView()
         }
+        .sheet(isPresented: $showJoinHousehold) {
+            joinHouseholdSheet
+        }
         .alert("Sign Out", isPresented: $showSignOutConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Sign Out", role: .destructive) {
@@ -296,6 +283,175 @@ struct SettingsView: View {
             }
         } message: {
             Text("Are you sure you want to sign out?")
+        }
+    }
+
+    @ViewBuilder
+    private var householdSharingSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Share Household")
+                .themedText(size: 15)
+
+            if let token = householdToken {
+                HStack {
+                    Text(token)
+                        .font(.system(.body, design: .monospaced))
+                        .themedText(size: 14)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Theme.textColor(for: colorScheme).opacity(0.1))
+                        .cornerRadius(8)
+
+                    Button(action: {
+                        UIPasteboard.general.string = token
+                        householdTokenCopied = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            householdTokenCopied = false
+                        }
+                    }) {
+                        Image(systemName: householdTokenCopied ? "checkmark" : "doc.on.doc")
+                            .foregroundColor(Theme.headingColor(for: colorScheme))
+                            .frame(width: 40, height: 40)
+                            .background(Theme.headingColor(for: colorScheme).opacity(0.1))
+                            .cornerRadius(8)
+                    }
+                }
+
+                Text("Token expires in 7 days. One-time use.")
+                    .themedText(size: 12)
+                    .opacity(0.7)
+            } else {
+                Button(action: {
+                    Task { await generateHouseholdToken() }
+                }) {
+                    HStack {
+                        if isGeneratingToken {
+                            ProgressView().tint(Theme.textColor(for: colorScheme))
+                        } else {
+                            Image(systemName: "person.badge.plus")
+                            Text("Generate Sharing Token")
+                        }
+                    }
+                    .themedText(size: 15)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Theme.headingColor(for: colorScheme).opacity(0.15))
+                    .cornerRadius(8)
+                }
+                .disabled(isGeneratingToken)
+
+                Text("Generate a token to invite family members to share this household's budgets.")
+                    .themedText(size: 12)
+                    .opacity(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let error = householdTokenError {
+                Text(error)
+                    .themedText(size: 12)
+                    .foregroundColor(Theme.Colors.deleteRed)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var joinHouseholdSheet: some View {
+        NavigationView {
+            ZStack {
+                Theme.backgroundColor(for: colorScheme).ignoresSafeArea()
+                VStack(spacing: 20) {
+                    Text("Paste a sharing token from someone in the household you want to join. You will lose access to your current household's data.")
+                        .themedText(size: 14)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    TextField("Sharing token", text: $joinTokenInput)
+                        .textFieldStyle(ThemedTextFieldStyle())
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+
+                    if let error = joinError {
+                        Text(error)
+                            .themedText(size: 13)
+                            .foregroundColor(Theme.Colors.deleteRed)
+                    }
+
+                    Button(action: {
+                        Task { await joinHousehold() }
+                    }) {
+                        HStack {
+                            if isJoining {
+                                ProgressView().tint(Theme.textColor(for: colorScheme))
+                            } else {
+                                Text("Join Household")
+                            }
+                        }
+                        .themedText(size: 16)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Theme.headingColor(for: colorScheme).opacity(0.2))
+                        .cornerRadius(8)
+                    }
+                    .disabled(joinTokenInput.isEmpty || isJoining)
+
+                    Spacer()
+                }
+                .padding(.horizontal, Theme.Layout.screenPadding)
+                .padding(.top, 20)
+            }
+            .navigationTitle("Join Household")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showJoinHousehold = false
+                        joinTokenInput = ""
+                        joinError = nil
+                    }
+                }
+            }
+        }
+    }
+
+    private func generateHouseholdToken() async {
+        await MainActor.run {
+            isGeneratingToken = true
+            householdTokenError = nil
+        }
+        do {
+            let token = try await APIService.shared.generateHouseholdToken()
+            await MainActor.run {
+                householdToken = token
+                isGeneratingToken = false
+            }
+        } catch {
+            await MainActor.run {
+                householdTokenError = error.localizedDescription
+                isGeneratingToken = false
+            }
+        }
+    }
+
+    private func joinHousehold() async {
+        await MainActor.run {
+            isJoining = true
+            joinError = nil
+        }
+        do {
+            let joined = try await APIService.shared.joinHousehold(token: joinTokenInput)
+            await authManager.updateHousehold(id: joined.id, name: joined.name)
+            await MainActor.run {
+                showJoinHousehold = false
+                joinTokenInput = ""
+                isJoining = false
+            }
+            NotificationCenter.default.post(name: .budgetsDidChange, object: nil)
+        } catch {
+            await MainActor.run {
+                joinError = error.localizedDescription
+                isJoining = false
+            }
         }
     }
 

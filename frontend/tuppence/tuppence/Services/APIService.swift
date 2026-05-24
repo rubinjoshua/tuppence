@@ -129,7 +129,7 @@ class APIService {
         let _: AutomationResponse = try await post(endpoint: "/check_automations", body: EmptyBody())
     }
 
-    // MARK: - Subscription
+    // MARK: - Subscription (groundwork — not exercised from UI in TestFlight builds)
 
     func getSubscriptionStatus() async throws -> SubscriptionResponse {
         try await get(endpoint: "/subscriptions/status")
@@ -142,6 +142,26 @@ class APIService {
     func verifyTransaction(jws: String) async throws -> SubscriptionResponse {
         let body = VerifyTransactionRequest(signedTransaction: jws)
         return try await post(endpoint: "/subscriptions/verify", body: body)
+    }
+
+    // MARK: - Household Sharing
+
+    func generateHouseholdToken(expiresInDays: Int = 7) async throws -> String {
+        guard let householdId = KeychainHelper.shared.get(KeychainHelper.Keys.householdId) else {
+            throw APIError.httpError(401, "Not signed in")
+        }
+        let body = GenerateSharingTokenRequest(expiresInDays: expiresInDays)
+        let response: SharingTokenResponse = try await post(
+            endpoint: "/households/\(householdId)/share-token",
+            body: body
+        )
+        return response.token
+    }
+
+    func joinHousehold(token: String) async throws -> JoinedHousehold {
+        let body = JoinHouseholdRequestBody(token: token)
+        let response: JoinHouseholdAPIResponse = try await post(endpoint: "/households/join", body: body)
+        return response.household
     }
 
     // MARK: - Year-End
@@ -372,4 +392,30 @@ private struct ListBudgetsResponse: Codable {
 private struct DeleteBudgetResponse: Codable {
     let success: Bool
     let message: String
+}
+
+// MARK: - Household Types
+
+private struct GenerateSharingTokenRequest: Codable {
+    let expiresInDays: Int
+    enum CodingKeys: String, CodingKey {
+        case expiresInDays = "expires_in_days"
+    }
+}
+
+private struct SharingTokenResponse: Codable {
+    let token: String
+}
+
+private struct JoinHouseholdRequestBody: Codable {
+    let token: String
+}
+
+private struct JoinHouseholdAPIResponse: Codable {
+    let household: JoinedHousehold
+}
+
+struct JoinedHousehold: Codable {
+    let id: String
+    let name: String
 }
