@@ -411,12 +411,6 @@ Expected response:
 - **Integration Notes:** `frontend/tuppence/tuppence/documents/FRONTEND_TO_BACKEND_NOTES.md`
 - **Implementation Summary:** `frontend/IMPLEMENTATION_SUMMARY.md`
 
-### Subscriptions
-- **Backend Implementation:** `backend/STRIPE_IMPLEMENTATION.md`
-- **Database Schema:** `backend/SUBSCRIPTION_SCHEMA_DESIGN.md`
-- **Test Suite:** `backend/SUBSCRIPTION_TESTS.md`
-- **Frontend Implementation:** `frontend/SUBSCRIPTION_IMPLEMENTATION.md`
-
 ## 🎉 You're Ready!
 
 Your Tuppence app is now set up and running. Enjoy tracking your budgets!
