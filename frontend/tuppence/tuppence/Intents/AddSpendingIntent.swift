@@ -76,29 +76,28 @@ struct AddSpendingIntent: AppIntent {
 struct QuickAddSpendingIntent: AppIntent {
     static var title: LocalizedStringResource = "Log Expense"
     static var description = IntentDescription(
-        "Log a spending. The Shortcut creator supplies an Amount and a list of common Descriptions (end the list with 'Something else' to allow free-text). At run time you pick one description and a budget; picking 'Something else' opens a text field."
+        "Log a spending. Supply an Amount and a list of common Descriptions (end the list with 'Something else' for a free-text fallback). At run time the user picks a description and a budget; picking 'Something else' opens a text field."
     )
 
     @Parameter(title: "Amount")
     var amount: Int
 
-    // Shortcut creator fills this in when building the Shortcut.
-    // End the list with "Something else" to give the runtime user a text-input fallback.
+    // Shortcut creator fills this in. End the list with "Something else"
+    // to give the runtime user a free-text fallback.
     @Parameter(
         title: "Description options",
-        description: "Choices shown to the user at run time. End with 'Something else' to allow free-text input."
+        description: "Options shown at run time. End with 'Something else' to allow free text."
     )
     var descriptionOptions: [String]
-
-    // Picker shown to the runtime user; populated from descriptionOptions
-    // via IntentParameterDependency on DescriptionChoiceQuery.
-    @Parameter(title: "Description")
-    var description: DescriptionChoice
 
     @Parameter(title: "Budget", optionsProvider: BudgetOptionsProvider())
     var budget: BudgetEntity
 
-    // Only prompted if the user picks "Something else".
+    // Holds the runtime pick from descriptionOptions.
+    @Parameter(title: "Description")
+    var pickedDescription: String?
+
+    // Only prompted when the user picks "Something else".
     @Parameter(
         title: "Custom description",
         requestValueDialog: "Enter description"
@@ -111,11 +110,21 @@ struct QuickAddSpendingIntent: AppIntent {
             return (settings.currencyCode, settings.currencySymbol)
         }
 
+        // Present the per-shortcut description list at run time. Doing this
+        // here (instead of via an Entity + IntentParameterDependency picker)
+        // avoids the EntityQuery being re-evaluated on every keystroke
+        // while the creator is editing descriptionOptions — that
+        // re-evaluation was clearing the text field.
+        let picked = try await $pickedDescription.requestDisambiguation(
+            among: descriptionOptions,
+            dialog: "Pick a description"
+        )
+
         let finalDescription: String
-        if description.text.localizedCaseInsensitiveCompare("Something else") == .orderedSame {
+        if picked.localizedCaseInsensitiveCompare("Something else") == .orderedSame {
             finalDescription = try await $customDescription.requestValue()
         } else {
-            finalDescription = description.text
+            finalDescription = picked
         }
 
         do {
@@ -131,37 +140,6 @@ struct QuickAddSpendingIntent: AppIntent {
         } catch {
             throw IntentError.message("Failed to add spending: \(error.localizedDescription)")
         }
-    }
-}
-
-// MARK: - Description Choice (per-shortcut list)
-
-@available(iOS 18.0, *)
-struct DescriptionChoice: AppEntity {
-    var id: String { text }
-    let text: String
-
-    var displayRepresentation: DisplayRepresentation {
-        DisplayRepresentation(title: "\(text)")
-    }
-
-    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Description")
-    static var defaultQuery = DescriptionChoiceQuery()
-}
-
-@available(iOS 18.0, *)
-struct DescriptionChoiceQuery: EntityQuery {
-    // Reads descriptionOptions off the calling intent at runtime — that's how
-    // the picker becomes populated from the creator-supplied list.
-    @IntentParameterDependency<QuickAddSpendingIntent>(\.$descriptionOptions)
-    var dependency
-
-    func entities(for identifiers: [String]) async throws -> [DescriptionChoice] {
-        identifiers.map { DescriptionChoice(text: $0) }
-    }
-
-    func suggestedEntities() async throws -> [DescriptionChoice] {
-        (dependency?.descriptionOptions ?? []).map { DescriptionChoice(text: $0) }
     }
 }
 
