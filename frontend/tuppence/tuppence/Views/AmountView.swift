@@ -52,6 +52,16 @@ struct AmountView: View {
         }
     }
 
+    // Relative-percentage mode compares this budget's spending against the
+    // total spending across all budgets. Income (positive totals) is excluded
+    // so a single big paycheck doesn't dwarf the spending picture.
+    private var totalSpendingMagnitude: Int {
+        budgets.reduce(0) { acc, b in
+            let amount = b.totalAmount ?? 0
+            return acc + (amount < 0 ? -amount : 0)
+        }
+    }
+
     private func formattedAmount(for budget: Budget) -> String {
         let currencySymbol = AppSettings.shared.currencySymbol
         let totalAmount = budget.totalAmount ?? 0
@@ -65,6 +75,11 @@ struct AmountView: View {
                 return "\(percentage)%"
             }
             return "0%"
+        case .relativePercentage:
+            let denominator = totalSpendingMagnitude
+            guard denominator > 0, totalAmount < 0 else { return "0%" }
+            let percentage = Int((Double(-totalAmount) / Double(denominator)) * 100)
+            return "\(percentage)%"
         }
     }
 }

@@ -11,8 +11,11 @@ struct LedgerEntry: Codable, Identifiable {
     let currency: String
     let budgetEmoji: String
     let datetime: Date
-    let descriptionText: String
-    let category: String
+    // Backend columns are nullable; iOS 18's JSONDecoder fails the entire
+    // array if any row's description_text/category is null and these are
+    // declared non-optional.
+    let descriptionText: String?
+    let category: String?
 
     var id: String { uuid }
 

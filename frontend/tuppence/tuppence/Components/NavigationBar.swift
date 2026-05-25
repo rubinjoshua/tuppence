@@ -15,6 +15,7 @@ enum Page: String, CaseIterable {
 enum AmountDisplay: String, CaseIterable {
     case total = "total"
     case percentage = "percentage of budgets"
+    case relativePercentage = "relative percentages"
 }
 
 struct NavigationBar: View {

@@ -41,7 +41,25 @@ class APIService {
 
     private let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        // The backend (Pydantic v2 over PostgreSQL TIMESTAMPTZ) emits ISO 8601
+        // with fractional seconds, e.g. "2026-05-25T15:30:45.123456+00:00".
+        // `JSONDecoder.dateDecodingStrategy = .iso8601` uses ISO8601DateFormatter
+        // without the .withFractionalSeconds option and fails on those — which
+        // breaks /ledger decoding on iOS 18.
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let raw = try container.decode(String.self)
+            if let date = withFraction.date(from: raw) { return date }
+            if let date = plain.date(from: raw) { return date }
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unparseable ISO 8601 date: \(raw)"
+            )
+        }
         return decoder
     }()
 

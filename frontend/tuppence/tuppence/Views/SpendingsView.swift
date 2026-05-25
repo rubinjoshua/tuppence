@@ -119,7 +119,7 @@ struct SpendingRow: View {
                         y: Theme.Layout.shadowY
                     )
 
-                Text(entry.descriptionText)
+                Text(entry.descriptionText ?? "")
                     .themedText(size: 17)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -130,34 +130,29 @@ struct SpendingRow: View {
             .padding(.vertical, 12)
             .background(Theme.backgroundColor(for: colorScheme))
             .offset(x: offset)
+            // minimumDistance > the ScrollView's pan threshold so vertical
+            // drags scroll the list; only deliberate horizontal swipes
+            // activate this gesture.
             .gesture(
-                DragGesture()
+                DragGesture(minimumDistance: 20)
                     .updating($isDragging) { _, state, _ in
                         state = true
                     }
                     .onChanged { value in
-                        // Only allow left swipe
+                        guard abs(value.translation.width) > abs(value.translation.height) else { return }
                         if value.translation.width < 0 {
-                            offset = value.translation.width
+                            offset = max(value.translation.width, -deleteButtonWidth * 1.5)
                         }
                     }
                     .onEnded { value in
-                        if value.translation.width < deleteThreshold {
-                            // Full swipe - delete
-                            withAnimation {
-                                offset = -500
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                onDelete()
-                            }
-                        } else if value.translation.width < deleteThreshold / 2 {
-                            // Partial swipe - show delete button
+                        // Swipe never deletes — it only reveals the button.
+                        // Delete requires an explicit tap on the trash icon.
+                        if value.translation.width < deleteThreshold / 2 {
                             withAnimation(.spring()) {
                                 offset = -deleteButtonWidth
                                 showingDeleteButton = true
                             }
                         } else {
-                            // Snap back
                             withAnimation(.spring()) {
                                 offset = 0
                                 showingDeleteButton = false

@@ -88,12 +88,15 @@ def get_category_map(
     """
     year, month = map(int, month_str.split('-'))
 
+    # Pie chart shows spending only — positive entries (income / budget
+    # additions) shouldn't dilute the breakdown.
     entries = db.query(LedgerEntry).filter(
         LedgerEntry.household_id == household_id,
         LedgerEntry.year == year,
         extract('month', LedgerEntry.datetime) == month,
         LedgerEntry.budget_emoji == budget_emoji,
         LedgerEntry.category.isnot(None),
+        LedgerEntry.amount < 0,
     ).all()
 
     category_data = {}

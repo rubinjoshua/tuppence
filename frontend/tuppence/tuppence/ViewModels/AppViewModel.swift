@@ -6,6 +6,7 @@
 import Combine
 import Foundation
 import SwiftUI
+import WidgetKit
 
 extension Notification.Name {
     static let budgetsDidChange = Notification.Name("budgetsDidChange")
@@ -23,7 +24,17 @@ class AppViewModel: ObservableObject {
     private let apiService = APIService.shared
     private let settings = AppSettings.shared
 
+    // App Group container so the cache is shared with the widget.
+    private static let cachedBudgetsKey = "cached_budgets"
+    private var sharedDefaults: UserDefaults {
+        UserDefaults(suiteName: AppSettings.appGroupID) ?? .standard
+    }
+
     init() {
+        // Seed budgets from the on-disk cache so the Amount page doesn't
+        // flash zeros while /amounts is in flight.
+        budgets = loadCachedBudgets()
+
         // Observe app lifecycle for syncing
         NotificationCenter.default.addObserver(
             self,
@@ -87,11 +98,24 @@ class AppViewModel: ObservableObject {
     private func loadBudgets() async {
         do {
             let fetchedBudgets = try await apiService.listBudgets()
-            budgets = fetchedBudgets
+            // /budgets has no totalAmount field. Carry forward the totals
+            // we already have (from cache or a previous /amounts call) so
+            // the Amount page doesn't flash zeros between /budgets and the
+            // /amounts call that follows in syncAndLoad().
+            let existingTotals: [String: Int] = budgets.reduce(into: [:]) { acc, b in
+                if let total = b.totalAmount { acc[b.emoji] = total }
+            }
+            budgets = fetchedBudgets.map { fetched in
+                var merged = fetched
+                if merged.totalAmount == nil, let prior = existingTotals[fetched.emoji] {
+                    merged.totalAmount = prior
+                }
+                return merged
+            }
         } catch {
             print("Failed to load budgets: \(error)")
-            // Fallback to empty budgets on error
-            budgets = []
+            // Keep what we already have — the cache + previous /amounts data
+            // is still more useful than wiping to empty.
         }
     }
 
@@ -109,6 +133,7 @@ class AppViewModel: ObservableObject {
         guard AuthenticationManager.shared.isAuthenticated else {
             errorMessage = "Please sign in to view your budget data"
             budgets = []
+            cacheBudgets([])
             return
         }
 
@@ -118,11 +143,30 @@ class AppViewModel: ObservableObject {
         do {
             let response = try await apiService.getAmounts()
             budgets = response.budgets
+            cacheBudgets(response.budgets)
         } catch {
             errorMessage = "Failed to load amounts: \(error.localizedDescription)"
+            // Keep the previously cached budgets in the UI on failure so the
+            // user doesn't see zeros.
         }
 
         isLoading = false
+    }
+
+    // MARK: - Cache
+
+    private func loadCachedBudgets() -> [Budget] {
+        guard let data = sharedDefaults.data(forKey: Self.cachedBudgetsKey),
+              let cached = try? JSONDecoder().decode([Budget].self, from: data) else {
+            return []
+        }
+        return cached
+    }
+
+    private func cacheBudgets(_ budgets: [Budget]) {
+        if let data = try? JSONEncoder().encode(budgets) {
+            sharedDefaults.set(data, forKey: Self.cachedBudgetsKey)
+        }
     }
 
     func loadLedger(for month: Date?) async {
@@ -186,6 +230,7 @@ class AppViewModel: ObservableObject {
             // Refresh data after adding
             await loadLedger(for: nil)
             await loadAmounts()
+            WidgetCenter.shared.reloadAllTimelines()
         } catch let error as APIError {
             errorMessage = "Failed to add spending: \(error.localizedDescription)"
             print("API Error: \(errorMessage ?? "unknown")")
@@ -201,6 +246,7 @@ class AppViewModel: ObservableObject {
             // Refresh ledger after deletion
             await loadLedger(for: nil)
             await loadAmounts()
+            WidgetCenter.shared.reloadAllTimelines()
         } catch {
             errorMessage = "Failed to delete spending: \(error.localizedDescription)"
         }
@@ -210,6 +256,10 @@ class AppViewModel: ObservableObject {
         do {
             let csvData = try await apiService.exportYear(year)
             try await apiService.archiveYear(year)
+            // Archiving removes ledger entries for that year — refresh
+            // amounts and tell the widget to redraw.
+            await loadAmounts()
+            WidgetCenter.shared.reloadAllTimelines()
             return csvData
         } catch {
             errorMessage = "Failed to export year: \(error.localizedDescription)"

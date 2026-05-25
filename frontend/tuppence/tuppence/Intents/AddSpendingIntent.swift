@@ -5,6 +5,7 @@
 
 import AppIntents
 import Foundation
+import WidgetKit
 
 @available(iOS 18.0, *)
 struct AddSpendingIntent: AppIntent {
@@ -54,6 +55,7 @@ struct AddSpendingIntent: AppIntent {
                 datetime: Date()
             )
 
+            WidgetCenter.shared.reloadAllTimelines()
             return .result(dialog: "Added \(transactionType.rawValue) of \(currencySymbol)\(amount) to \(budgetEmoji)")
         } catch {
             throw IntentError.message("Failed to add spending: \(error.localizedDescription)")
@@ -142,6 +144,7 @@ struct QuickAddSpendingIntent: AppIntent {
                 datetime: Date()
             )
 
+            WidgetCenter.shared.reloadAllTimelines()
             return .result(dialog: "Added \(currencySymbol)\(amount) — \(finalDescription) — to \(budget.emoji) \(budget.label)")
         } catch {
             throw IntentError.message("Failed to add spending: \(error.localizedDescription)")
