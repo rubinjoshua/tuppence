@@ -143,7 +143,7 @@ extension View {
     /// a short gradient (opaque → clear) and then a fully-clear strip
     /// the height of the nav bar. By the time content reaches the menu
     /// text it's already 100% transparent.
-    func fadingBottom(gradientHeight: CGFloat = 60, clearHeight: CGFloat = 180) -> some View {
+    func fadingBottom(gradientHeight: CGFloat = 60, clearHeight: CGFloat = 160) -> some View {
         mask(
             VStack(spacing: 0) {
                 Rectangle().fill(.black)

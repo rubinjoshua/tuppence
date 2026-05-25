@@ -76,19 +76,22 @@ struct AddSpendingIntent: AppIntent {
 struct QuickAddSpendingIntent: AppIntent {
     static var title: LocalizedStringResource = "Log Expense"
     static var description = IntentDescription(
-        "Log a spending. Supply an Amount and a list of common Descriptions (end the list with 'Something else' for a free-text fallback). At run time the user picks a description and a budget; picking 'Something else' opens a text field."
+        "Log a spending. Supply an Amount and a comma-separated list of common Descriptions. The user picks one at run time; 'Something else' is appended automatically as a free-text fallback."
     )
 
     @Parameter(title: "Amount")
     var amount: Int
 
-    // Shortcut creator fills this in. End the list with "Something else"
-    // to give the runtime user a free-text fallback.
+    // Plain String (comma-separated) instead of [String] because the
+    // iOS Shortcuts editor's per-item text field for [String]
+    // parameters eats keystrokes. A single String input doesn't trip
+    // that bug. "Something else" is appended automatically at runtime
+    // so the creator never has to add it themselves.
     @Parameter(
-        title: "Description options",
-        description: "Options shown at run time. End with 'Something else' to allow free text."
+        title: "Description options (comma-separated)",
+        description: "e.g. Lunch, Coffee, Groceries. 'Something else' is appended automatically as a free-text option."
     )
-    var descriptionOptions: [String]
+    var descriptionOptions: String
 
     @Parameter(title: "Budget", optionsProvider: BudgetOptionsProvider())
     var budget: BudgetEntity
@@ -110,13 +113,16 @@ struct QuickAddSpendingIntent: AppIntent {
             return (settings.currencyCode, settings.currencySymbol)
         }
 
-        // Present the per-shortcut description list at run time. Doing this
-        // here (instead of via an Entity + IntentParameterDependency picker)
-        // avoids the EntityQuery being re-evaluated on every keystroke
-        // while the creator is editing descriptionOptions — that
-        // re-evaluation was clearing the text field.
+        // Parse the comma-separated list and always append a free-text
+        // escape hatch. The creator never has to remember to add it.
+        let parsedOptions = descriptionOptions
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let runtimeOptions = parsedOptions + ["Something else"]
+
         let picked = try await $pickedDescription.requestDisambiguation(
-            among: descriptionOptions,
+            among: runtimeOptions,
             dialog: "Pick a description"
         )
 
