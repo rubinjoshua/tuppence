@@ -24,42 +24,38 @@ struct SpendingsView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(groupedEntries, id: \.date) { group in
-                        // Date heading
-                        Text(formatDate(group.date))
-                            .font(Theme.Fonts.body(size: 17))
-                            .foregroundColor(Theme.shadowColor(for: colorScheme))
-                            .opacity(0.6)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.top, group.date == groupedEntries.first?.date ? 20 : 32)
-                            .padding(.bottom, 12)
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(groupedEntries, id: \.date) { group in
+                    // Date heading
+                    Text(formatDate(group.date))
+                        .font(Theme.Fonts.body(size: 17))
+                        .foregroundColor(Theme.shadowColor(for: colorScheme))
+                        .opacity(0.6)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, group.date == groupedEntries.first?.date ? 20 : 32)
+                        .padding(.bottom, 12)
 
-                        // Entries for this date (sorted oldest to newest)
-                        ForEach(group.entries.sorted(by: { $0.datetime < $1.datetime })) { entry in
-                            SpendingRow(
-                                entry: entry,
-                                onDelete: {
-                                    Task {
-                                        await onDelete(entry.uuid)
-                                    }
+                    // Entries for this date (sorted oldest to newest)
+                    ForEach(group.entries.sorted(by: { $0.datetime < $1.datetime })) { entry in
+                        SpendingRow(
+                            entry: entry,
+                            onDelete: {
+                                Task {
+                                    await onDelete(entry.uuid)
                                 }
-                            )
-                            .padding(.horizontal, Theme.Layout.screenPadding)
-                            .padding(.vertical, 8)
-                        }
+                            }
+                        )
+                        .padding(.horizontal, Theme.Layout.screenPadding)
+                        .padding(.vertical, 8)
                     }
                 }
             }
-            .refreshable {
-                await onRefresh()
-            }
-
-            Spacer()
         }
-        .padding(.top, 64)  // Increased to clear floating button (44pt button + 12pt top padding + 8pt margin)
+        .refreshable {
+            await onRefresh()
+        }
+        .padding(.top, 64)  // Clear floating add button (44pt button + 12pt top padding + 8pt margin)
     }
 
     // Format date as "6/3/2026" or "today"

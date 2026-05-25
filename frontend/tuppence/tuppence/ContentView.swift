@@ -45,8 +45,10 @@ struct ContentView: View {
             Theme.backgroundColor(for: colorScheme)
                 .ignoresSafeArea()
 
-            // Content
-            VStack {
+            // Content — fills the screen behind the floating nav bar.
+            // Scrollable pages (Spendings, Settings) get bottom inset via
+            // safeAreaInset so they stop before the nav bar overlay.
+            Group {
                 switch currentPage {
                 case .amount:
                     AmountView(
@@ -98,8 +100,12 @@ struct ContentView: View {
                 case .settings:
                     SettingsView()
                 }
-
-                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                // Reserves space for the floating nav bar (140pt content +
+                // 20pt bottom padding + 20pt visual gap).
+                Color.clear.frame(height: 180)
             }
 
             // Navigation Bar

@@ -74,17 +74,19 @@ struct AddSpendingIntent: AppIntent {
 
 @available(iOS 18.0, *)
 struct QuickAddSpendingIntent: AppIntent {
-    static var title: LocalizedStringResource = "Quick Add Spending"
-    static var description = IntentDescription("Quickly log spending with pre-selected budget")
-
-    @Parameter(title: "Budget", optionsProvider: BudgetOptionsProvider())
-    var budget: BudgetEntity
+    static var title: LocalizedStringResource = "Log Expense"
+    static var description = IntentDescription("Log a spending. Pick from your most-used descriptions or type a new one, then choose a budget.")
 
     @Parameter(title: "Amount")
     var amount: Int
 
-    @Parameter(title: "Description")
+    // optionsProvider yields the household's top 5 most-used descriptions.
+    // iOS Shortcuts shows them as a picker AND allows typing a custom value.
+    @Parameter(title: "Description", optionsProvider: TopDescriptionsProvider())
     var description: String
+
+    @Parameter(title: "Budget", optionsProvider: BudgetOptionsProvider())
+    var budget: BudgetEntity
 
     func perform() async throws -> some IntentResult {
         let (currencyCode, currencySymbol) = await MainActor.run {
@@ -101,10 +103,17 @@ struct QuickAddSpendingIntent: AppIntent {
                 datetime: Date()
             )
 
-            return .result(dialog: "Added spending of \(currencySymbol)\(amount) to \(budget.emoji) \(budget.label)")
+            return .result(dialog: "Added spending of \(currencySymbol)\(amount) — \(description) — to \(budget.emoji) \(budget.label)")
         } catch {
             throw IntentError.message("Failed to add spending: \(error.localizedDescription)")
         }
+    }
+}
+
+@available(iOS 18.0, *)
+struct TopDescriptionsProvider: DynamicOptionsProvider {
+    func results() async throws -> [String] {
+        (try? await APIService.shared.topDescriptions()) ?? []
     }
 }
 
