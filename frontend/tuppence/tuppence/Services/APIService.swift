@@ -163,13 +163,6 @@ class APIService {
         return try await post(endpoint: "/subscriptions/verify", body: body)
     }
 
-    // MARK: - Top Descriptions
-
-    func topDescriptions(limit: Int = 5) async throws -> [String] {
-        let response: TopDescriptionsResponse = try await get(endpoint: "/top_descriptions?limit=\(limit)")
-        return response.descriptions
-    }
-
     // MARK: - Household Sharing
 
     func generateHouseholdToken(expiresInDays: Int = 7) async throws -> String {
@@ -446,6 +439,3 @@ struct JoinedHousehold: Codable {
     let name: String
 }
 
-private struct TopDescriptionsResponse: Codable {
-    let descriptions: [String]
-}

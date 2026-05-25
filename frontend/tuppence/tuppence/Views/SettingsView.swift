@@ -69,11 +69,12 @@ struct SettingsView: View {
                 // About Section
                 aboutSection
 
-                Spacer(minLength: 100)
+                Spacer(minLength: 200)  // Headroom so last section can scroll above the nav-bar fade.
             }
             .padding(.horizontal, Theme.Layout.screenPadding)
             .padding(.top, 40)
         }
+        .fadingBottom(height: 140)
         .onAppear {
             loadEmailFromSettings()
             Task {

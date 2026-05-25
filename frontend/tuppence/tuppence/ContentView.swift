@@ -46,67 +46,10 @@ struct ContentView: View {
                 .ignoresSafeArea()
 
             // Content — fills the screen behind the floating nav bar.
-            // Scrollable pages (Spendings, Settings) get bottom inset via
-            // safeAreaInset so they stop before the nav bar overlay.
-            Group {
-                switch currentPage {
-                case .amount:
-                    AmountView(
-                        budgets: viewModel.budgets,
-                        displayMode: amountDisplay
-                    )
-                case .analysis:
-                    if let budget = selectedBudget {
-                        AnalysisView(categories: viewModel.categoryData)
-                            .onChange(of: selectedBudgetIndex) { _, _ in
-                                Task {
-                                    if let budget = selectedBudget {
-                                        await viewModel.loadCategoryMap(for: selectedMonth, budgetEmoji: budget.emoji)
-                                    }
-                                }
-                            }
-                            .onChange(of: selectedMonthIndex) { _, _ in
-                                Task {
-                                    if let budget = selectedBudget {
-                                        await viewModel.loadCategoryMap(for: selectedMonth, budgetEmoji: budget.emoji)
-                                    }
-                                }
-                            }
-                            .task {
-                                await viewModel.loadCategoryMap(for: selectedMonth, budgetEmoji: budget.emoji)
-                            }
-                    } else {
-                        emptyState(message: "No budgets configured.\nPlease add budgets in Settings.")
-                    }
-                case .spendings:
-                    SpendingsView(
-                        entries: viewModel.ledgerEntries,
-                        onDelete: { uuid in
-                            await viewModel.deleteSpending(uuid: uuid)
-                        },
-                        onRefresh: {
-                            await viewModel.loadLedger(for: selectedMonth)
-                            await viewModel.loadAmounts()
-                        }
-                    )
-                    .onChange(of: selectedMonthIndex) { _, _ in
-                        Task {
-                            await viewModel.loadLedger(for: selectedMonth)
-                        }
-                    }
-                    .task {
-                        await viewModel.loadLedger(for: selectedMonth)
-                    }
-                case .settings:
-                    SettingsView()
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                // Reserves space for the floating nav bar (140pt content +
-                // 20pt bottom padding + 20pt visual gap).
-                Color.clear.frame(height: 180)
-            }
+            // Scrollable pages apply their own fadingBottom modifier so the
+            // last rows visibly fade out before reaching the nav bar.
+            pageContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             // Navigation Bar
             NavigationBar(
@@ -171,6 +114,61 @@ struct ContentView: View {
             if let error = viewModel.errorMessage {
                 Text(error)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var pageContent: some View {
+        switch currentPage {
+        case .amount:
+            AmountView(
+                budgets: viewModel.budgets,
+                displayMode: amountDisplay
+            )
+        case .analysis:
+            if let budget = selectedBudget {
+                AnalysisView(categories: viewModel.categoryData)
+                    .onChange(of: selectedBudgetIndex) { _, _ in
+                        Task {
+                            if let budget = selectedBudget {
+                                await viewModel.loadCategoryMap(for: selectedMonth, budgetEmoji: budget.emoji)
+                            }
+                        }
+                    }
+                    .onChange(of: selectedMonthIndex) { _, _ in
+                        Task {
+                            if let budget = selectedBudget {
+                                await viewModel.loadCategoryMap(for: selectedMonth, budgetEmoji: budget.emoji)
+                            }
+                        }
+                    }
+                    .task {
+                        await viewModel.loadCategoryMap(for: selectedMonth, budgetEmoji: budget.emoji)
+                    }
+            } else {
+                emptyState(message: "No budgets configured.\nPlease add budgets in Settings.")
+            }
+        case .spendings:
+            SpendingsView(
+                entries: viewModel.ledgerEntries,
+                onDelete: { uuid in
+                    await viewModel.deleteSpending(uuid: uuid)
+                },
+                onRefresh: {
+                    await viewModel.loadLedger(for: selectedMonth)
+                    await viewModel.loadAmounts()
+                }
+            )
+            .onChange(of: selectedMonthIndex) { _, _ in
+                Task {
+                    await viewModel.loadLedger(for: selectedMonth)
+                }
+            }
+            .task {
+                await viewModel.loadLedger(for: selectedMonth)
+            }
+        case .settings:
+            SettingsView()
         }
     }
 

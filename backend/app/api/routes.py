@@ -1,13 +1,10 @@
 """API routes - All endpoint definitions"""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import func
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 from uuid import UUID
 from typing import List, Tuple
-
-from pydantic import BaseModel
 
 from app.database import get_db
 from app.models.ledger import LedgerEntry
@@ -164,35 +161,6 @@ async def make_spending(
         category=category,
         success=True,
     )
-
-
-class TopDescriptionsResponse(BaseModel):
-    descriptions: List[str]
-
-
-@router.get("/top_descriptions", response_model=TopDescriptionsResponse)
-def get_top_descriptions(
-    limit: int = Query(default=5, ge=1, le=20),
-    user_household: Tuple[User, Household] = Depends(get_current_user_and_household),
-    db: Session = Depends(get_db),
-):
-    """Return the household's most-used non-empty spending descriptions."""
-    _, household = user_household
-
-    rows = (
-        db.query(LedgerEntry.description_text)
-        .filter(
-            LedgerEntry.household_id == household.id,
-            LedgerEntry.description_text.isnot(None),
-            func.length(func.trim(LedgerEntry.description_text)) > 0,
-        )
-        .group_by(LedgerEntry.description_text)
-        .order_by(func.count().desc(), func.max(LedgerEntry.datetime).desc())
-        .limit(limit)
-        .all()
-    )
-
-    return TopDescriptionsResponse(descriptions=[row[0] for row in rows])
 
 
 @router.delete("/undo_spending/{entry_uuid}", response_model=UndoSpendingResponse)

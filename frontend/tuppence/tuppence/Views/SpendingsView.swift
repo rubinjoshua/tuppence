@@ -51,11 +51,13 @@ struct SpendingsView: View {
                     }
                 }
             }
+            .padding(.bottom, 200)  // Headroom so last row can scroll above the nav-bar fade.
         }
         .refreshable {
             await onRefresh()
         }
-        .padding(.top, 64)  // Clear floating add button (44pt button + 12pt top padding + 8pt margin)
+        .padding(.top, 64)  // Clear floating add button.
+        .fadingBottom(height: 140)
     }
 
     // Format date as "6/3/2026" or "today"

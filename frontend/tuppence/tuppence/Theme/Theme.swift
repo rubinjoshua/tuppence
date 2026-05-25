@@ -137,4 +137,22 @@ extension View {
     func themedHeading(size: CGFloat = 24) -> some View {
         modifier(ThemedHeading(size: size))
     }
+
+    /// Mask the bottom of a scrollable view so content visually fades out
+    /// instead of slipping legibly behind the floating nav bar. Combine with
+    /// a matching amount of bottom padding on the scroll content so the last
+    /// row can be scrolled clear of the fade region.
+    func fadingBottom(height: CGFloat = 140) -> some View {
+        mask(
+            VStack(spacing: 0) {
+                Rectangle().fill(.black)
+                LinearGradient(
+                    colors: [.black, .clear],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: height)
+            }
+        )
+    }
 }
