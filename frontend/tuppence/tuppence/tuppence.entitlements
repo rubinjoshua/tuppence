@@ -11,6 +11,7 @@
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>group.com.joshuarubin.tuppence</string>
+		<string>group.com.joshuarubin.tuppence.TuppenceWidgetExtension</string>
 	</array>
 	<key>keychain-access-groups</key>
 	<array>
