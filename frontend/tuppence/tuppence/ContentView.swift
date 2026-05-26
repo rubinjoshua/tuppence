@@ -155,8 +155,13 @@ struct ContentView: View {
                     await viewModel.deleteSpending(uuid: uuid)
                 },
                 onRefresh: {
-                    await viewModel.loadLedger(for: selectedMonth)
-                    await viewModel.loadAmounts()
+                    // Run in parallel: chaining `await loadLedger; await loadAmounts`
+                    // caused SwiftUI to re-render after loadLedger's state update,
+                    // which cancelled the .refreshable Task before loadAmounts'
+                    // URLSession call completed and left the spinner spinning.
+                    async let ledger: () = viewModel.loadLedger(for: selectedMonth)
+                    async let amounts: () = viewModel.loadAmounts()
+                    _ = await (ledger, amounts)
                 }
             )
             .onChange(of: selectedMonthIndex) { _, _ in

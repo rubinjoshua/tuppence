@@ -12,6 +12,20 @@ extension Notification.Name {
     static let budgetsDidChange = Notification.Name("budgetsDidChange")
 }
 
+/// Recognize the cooperative-cancellation errors that bubble up when SwiftUI
+/// cancels its host Task (e.g. .refreshable's task gets replaced while the
+/// closure is still awaiting). URLSession translates Swift Concurrency
+/// cancellation to URLError(.cancelled); APIService wraps that as
+/// .requestFailed; the raw Swift error is CancellationError.
+private func isCancellation(_ error: Error) -> Bool {
+    if error is CancellationError { return true }
+    if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+    if case APIError.requestFailed(let inner) = error {
+        if let urlError = inner as? URLError, urlError.code == .cancelled { return true }
+    }
+    return false
+}
+
 @MainActor
 class AppViewModel: ObservableObject {
     @Published var budgets: [Budget] = []
@@ -145,7 +159,13 @@ class AppViewModel: ObservableObject {
             budgets = response.budgets
             cacheBudgets(response.budgets)
         } catch {
-            errorMessage = "Failed to load amounts: \(error.localizedDescription)"
+            // URLError.cancelled bubbles up when SwiftUI cancels the host
+            // Task (e.g. .refreshable mid-state-update). Treating it as an
+            // error spams a misleading alert; the next legitimate load will
+            // overwrite the data anyway.
+            if !isCancellation(error) {
+                errorMessage = "Failed to load amounts: \(error.localizedDescription)"
+            }
             // Keep the previously cached budgets in the UI on failure so the
             // user doesn't see zeros.
         }
@@ -183,7 +203,9 @@ class AppViewModel: ObservableObject {
             let monthString = month?.monthYearString
             ledgerEntries = try await apiService.getLedger(month: monthString)
         } catch {
-            errorMessage = "Failed to load ledger: \(error.localizedDescription)"
+            if !isCancellation(error) {
+                errorMessage = "Failed to load ledger: \(error.localizedDescription)"
+            }
         }
 
         isLoading = false
