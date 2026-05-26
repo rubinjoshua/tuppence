@@ -34,6 +34,7 @@ class Budget(Base):
     emoji = Column(String(10), nullable=False, index=True)
     label = Column(String(100), nullable=False)
     monthly_amount = Column(Integer, nullable=False)
+    sort_order = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

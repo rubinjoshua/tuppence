@@ -28,7 +28,9 @@ def get_amounts_for_current_year(
     if year is None:
         year = datetime.now(timezone.utc).year
 
-    budgets = db.query(Budget).filter(Budget.household_id == household_id).all()
+    budgets = db.query(Budget).filter(
+        Budget.household_id == household_id
+    ).order_by(Budget.sort_order.asc(), Budget.created_at.asc()).all()
 
     ledger_totals = db.query(
         LedgerEntry.budget_emoji,

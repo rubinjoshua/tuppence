@@ -11,6 +11,7 @@ struct AddExpenseSheet: View {
     let onAddExpense: (Int, String, String) async -> Void
 
     @State private var selectedEmoji: String = ""
+    @State private var hasPickedBudget: Bool = false
     @State private var description: String = ""
     @State private var isPositive: Bool = false  // Default to - (expense)
     @State private var amountText: String = ""
@@ -30,11 +31,6 @@ struct AddExpenseSheet: View {
         self._isPresented = isPresented
         self.budgets = budgets
         self.onAddExpense = onAddExpense
-
-        // Set default emoji to first budget's emoji
-        if let firstBudget = budgets.first {
-            _selectedEmoji = State(initialValue: firstBudget.emoji)
-        }
     }
 
     var body: some View {
@@ -44,24 +40,28 @@ struct AddExpenseSheet: View {
                 .ignoresSafeArea()
                 .onTapGesture(perform: handleBackgroundTap)
 
-            // Expense entry sheet
             VStack(spacing: 0) {
-                expenseEntryRow
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 16)
-                    .background(liquidGlassBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                    .shadow(
-                        color: Theme.shadowColor(for: colorScheme).opacity(0.3),
-                        radius: 8,
-                        x: 0,
-                        y: 4
-                    )
-                    .padding(.horizontal, 40)
+                if hasPickedBudget {
+                    expenseEntryRow
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 16)
+                        .background(liquidGlassBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .shadow(
+                            color: Theme.shadowColor(for: colorScheme).opacity(0.3),
+                            radius: 8,
+                            x: 0,
+                            y: 4
+                        )
+                        .padding(.horizontal, 40)
+                } else {
+                    inlineBudgetPicker
+                        .padding(.horizontal, 20)
+                }
             }
             .frame(maxHeight: .infinity, alignment: .center)
 
-            // Emoji picker
+            // Re-select emoji from entry row
             if isShowingEmojiPicker {
                 emojiPickerOverlay
             }
@@ -72,14 +72,61 @@ struct AddExpenseSheet: View {
             }
         }
         .onAppear {
-            // Reset to defaults when appearing
-            if let firstBudget = budgets.first {
-                selectedEmoji = firstBudget.emoji
-            }
+            // Reset to defaults when appearing — user picks budget first.
+            selectedEmoji = ""
+            hasPickedBudget = false
             description = ""
             isPositive = false  // Default to - (expense)
             amountText = ""
         }
+    }
+
+    // MARK: - Inline Budget Picker (initial state)
+
+    private var inlineBudgetPicker: some View {
+        VStack(spacing: 0) {
+            Text("Pick a budget")
+                .themedText(size: 15)
+                .opacity(0.7)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 8)
+
+            VStack(spacing: 6) {
+                ForEach(budgets) { budget in
+                    Button(action: {
+                        selectedEmoji = budget.emoji
+                        hasPickedBudget = true
+                        // Move focus to the description field so the user can type immediately.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            focusedField = .description
+                        }
+                    }) {
+                        HStack(spacing: 12) {
+                            Text(budget.emoji)
+                                .font(.system(size: 22 * Theme.Layout.emojiScale))
+                            Text(budget.label)
+                                .themedText(size: 17)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Color.white.opacity(0.001))  // Hit-test fill
+                        .contentShape(Rectangle())
+                    }
+                }
+            }
+            .padding(.bottom, 12)
+        }
+        .background(liquidGlassBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(
+            color: Theme.shadowColor(for: colorScheme).opacity(0.3),
+            radius: 8,
+            x: 0,
+            y: 4
+        )
     }
 
     // MARK: - Main Expense Entry Row
@@ -148,11 +195,16 @@ struct AddExpenseSheet: View {
                     }
             }
 
-            // Confirm button (moved to right)
+            // Confirm button — glass, not red. The red caret was misleading
+            // (looked like a "delete" affordance). Liquid Glass on iOS 26;
+            // translucent material on iOS 18.
             Button(action: handleAddExpense) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundColor(Theme.headingColor(for: colorScheme))
+                Image(systemName: "plus")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(Theme.textColor(for: colorScheme))
+                    .frame(width: 32, height: 32)
+                    .background(confirmButtonBackground)
+                    .clipShape(Circle())
             }
         }
     }
@@ -253,7 +305,7 @@ struct AddExpenseSheet: View {
         .padding(.top, 80)
     }
 
-    // MARK: - Liquid Glass Background
+    // MARK: - Backgrounds
 
     @ViewBuilder
     private var liquidGlassBackground: some View {
@@ -281,6 +333,24 @@ struct AddExpenseSheet: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
                         .fill(Color.white.opacity(0.15))
+                )
+        }
+    }
+
+    @ViewBuilder
+    private var confirmButtonBackground: some View {
+        if #available(iOS 26.0, *) {
+            // Native Liquid Glass on iOS 26.
+            Circle()
+                .fill(.clear)
+                .glassEffect(.regular.interactive(), in: Circle())
+        } else {
+            // iOS 18: translucent material so the button reads as glass
+            // rather than the red heading color.
+            Circle()
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    Circle().stroke(Theme.textColor(for: colorScheme).opacity(0.2), lineWidth: 0.5)
                 )
         }
     }

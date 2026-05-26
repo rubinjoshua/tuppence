@@ -15,6 +15,8 @@ from app.schemas.budget import (
     BudgetResponse,
     ListBudgetsResponse,
     DeleteBudgetResponse,
+    ReorderBudgetsRequest,
+    ReorderBudgetsResponse,
 )
 from app.dependencies.auth import get_current_user_and_household
 
@@ -36,7 +38,7 @@ async def list_budgets(
 
     budgets = db.query(Budget).filter(
         Budget.household_id == household.id
-    ).order_by(Budget.created_at.asc()).all()
+    ).order_by(Budget.sort_order.asc(), Budget.created_at.asc()).all()
 
     return ListBudgetsResponse(
         budgets=[BudgetResponse.model_validate(budget) for budget in budgets]
@@ -69,12 +71,19 @@ async def create_budget(
             detail=f"Budget with emoji '{data.emoji}' already exists in this household"
         )
 
-    # Create budget
+    # New budgets go to the end of the order.
+    from sqlalchemy import func as sa_func
+    max_sort = db.query(sa_func.max(Budget.sort_order)).filter(
+        Budget.household_id == household.id
+    ).scalar()
+    next_sort = (max_sort + 1) if max_sort is not None else 0
+
     budget = Budget(
         household_id=household.id,
         emoji=data.emoji,
         label=data.label,
-        monthly_amount=data.monthly_amount
+        monthly_amount=data.monthly_amount,
+        sort_order=next_sort,
     )
 
     db.add(budget)
@@ -82,6 +91,53 @@ async def create_budget(
     db.refresh(budget)
 
     return BudgetResponse.model_validate(budget)
+
+
+@router.post("/reorder", response_model=ReorderBudgetsResponse)
+async def reorder_budgets(
+    data: ReorderBudgetsRequest,
+    user_household: Tuple[User, Household] = Depends(get_current_user_and_household),
+    db: Session = Depends(get_db),
+):
+    """
+    Update the display order of all budgets in the household.
+
+    Accepts a list of budget IDs in the desired order. Any household budgets
+    not in the list are appended (preserving their relative order) so the
+    client can send a partial list without losing budgets.
+    """
+    _, household = user_household
+
+    all_budgets = db.query(Budget).filter(
+        Budget.household_id == household.id
+    ).order_by(Budget.sort_order.asc(), Budget.created_at.asc()).all()
+
+    id_to_budget = {b.id: b for b in all_budgets}
+
+    # Validate every supplied id belongs to this household.
+    for budget_id in data.budget_ids:
+        if budget_id not in id_to_budget:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Budget {budget_id} not found in this household",
+            )
+
+    ordered_ids: list[int] = []
+    seen: set[int] = set()
+    for budget_id in data.budget_ids:
+        if budget_id in seen:
+            continue
+        ordered_ids.append(budget_id)
+        seen.add(budget_id)
+    for b in all_budgets:
+        if b.id not in seen:
+            ordered_ids.append(b.id)
+
+    for index, budget_id in enumerate(ordered_ids):
+        id_to_budget[budget_id].sort_order = index
+
+    db.commit()
+    return ReorderBudgetsResponse()
 
 
 @router.get("/{budget_id}", response_model=BudgetResponse)

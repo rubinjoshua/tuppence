@@ -16,17 +16,31 @@ class KeychainHelper {
     func save(_ value: String, for key: String) -> Bool {
         guard let data = value.data(using: .utf8) else { return false }
 
+        // kSecAttrAccessibleAfterFirstUnlock so an AppIntent triggered by an
+        // automation (NFC tap, home screen widget) can read the session token
+        // even when the main app is suspended/extension-hosted. The default
+        // policy (WhenUnlocked) intermittently fails in extension contexts,
+        // producing 403 "Not authenticated" responses from the backend.
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: key,
-            kSecValueData as String: data
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
         ]
 
         SecItemDelete(query as CFDictionary)
 
         let status = SecItemAdd(query as CFDictionary, nil)
         return status == errSecSuccess
+    }
+
+    /// One-time migration: re-save the stored value under the new accessibility
+    /// class. Items written before the switch to AfterFirstUnlock retain their
+    /// original policy until re-written.
+    func upgradeAccessibilityIfNeeded(for key: String) {
+        guard let existing = get(key) else { return }
+        _ = save(existing, for: key)
     }
 
     func get(_ key: String) -> String? {

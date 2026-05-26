@@ -153,6 +153,11 @@ class APIService {
         let _: DeleteBudgetResponse = try await delete(endpoint: "/budgets/\(id)")
     }
 
+    func reorderBudgets(orderedIds: [Int]) async throws {
+        let body = ReorderBudgetsRequest(budgetIds: orderedIds)
+        let _: ReorderBudgetsResponse = try await post(endpoint: "/budgets/reorder", body: body)
+    }
+
     // MARK: - Configuration
 
     func syncSettings(currencySymbol: String) async throws {
@@ -429,6 +434,18 @@ private struct ListBudgetsResponse: Codable {
 private struct DeleteBudgetResponse: Codable {
     let success: Bool
     let message: String
+}
+
+private struct ReorderBudgetsRequest: Codable {
+    let budgetIds: [Int]
+
+    enum CodingKeys: String, CodingKey {
+        case budgetIds = "budget_ids"
+    }
+}
+
+private struct ReorderBudgetsResponse: Codable {
+    let success: Bool
 }
 
 // MARK: - Household Types

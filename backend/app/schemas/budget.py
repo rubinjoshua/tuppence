@@ -36,6 +36,7 @@ class BudgetResponse(BaseModel):
     emoji: str
     label: str
     monthly_amount: int
+    sort_order: int
     created_at: datetime
     updated_at: datetime
 
@@ -49,6 +50,16 @@ class DeleteBudgetResponse(BaseModel):
     """Response schema for deleting a budget"""
     success: bool = True
     message: str = "Budget deleted successfully"
+
+
+class ReorderBudgetsRequest(BaseModel):
+    """Request schema for updating budget display order"""
+    budget_ids: List[int] = Field(..., description="Budget IDs in desired display order (first = first shown)")
+
+
+class ReorderBudgetsResponse(BaseModel):
+    """Response schema for reordering budgets"""
+    success: bool = True
 
 
 class BudgetWithTotal(BaseModel):

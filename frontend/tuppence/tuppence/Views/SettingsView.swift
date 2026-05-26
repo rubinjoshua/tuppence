@@ -173,6 +173,27 @@ struct SettingsView: View {
         }
     }
 
+    private func moveBudget(from source: IndexSet, to destination: Int) {
+        budgets.move(fromOffsets: source, toOffset: destination)
+        persistBudgetOrder()
+    }
+
+    private func persistBudgetOrder() {
+        let orderedIds = budgets.compactMap { $0.backendId }
+        guard !orderedIds.isEmpty else { return }
+        Task {
+            do {
+                try await APIService.shared.reorderBudgets(orderedIds: orderedIds)
+                NotificationCenter.default.post(name: .budgetsDidChange, object: nil)
+            } catch {
+                await MainActor.run {
+                    budgetError = "Failed to save order: \(error.localizedDescription)"
+                }
+                await loadBudgets()
+            }
+        }
+    }
+
     // MARK: - Authentication Section
 
     @ViewBuilder
@@ -509,18 +530,31 @@ struct SettingsView: View {
                     .opacity(0.6)
             } else {
                 VStack(spacing: 12) {
-                    ForEach(budgets) { budget in
-                        BudgetRow(budget: budget) {
-                            editingBudget = budget
-                        } onDelete: {
-                            Task {
-                                await deleteBudget(budget)
+                    ForEach(Array(budgets.enumerated()), id: \.element.id) { index, budget in
+                        BudgetRow(
+                            budget: budget,
+                            canMoveUp: index > 0,
+                            canMoveDown: index < budgets.count - 1,
+                            onMoveUp: {
+                                moveBudget(from: IndexSet(integer: index), to: index - 1)
+                            },
+                            onMoveDown: {
+                                // SwiftUI offsets: moving down requires destination = index+2
+                                moveBudget(from: IndexSet(integer: index), to: index + 2)
+                            },
+                            onEdit: {
+                                editingBudget = budget
+                            },
+                            onDelete: {
+                                Task {
+                                    await deleteBudget(budget)
+                                }
                             }
-                        }
+                        )
                     }
                 }
 
-                Text("Budgets are shared across all household members")
+                Text("Budgets are shared across all household members. Use the arrows to change their order across the app.")
                     .themedText(size: 12)
                     .opacity(0.6)
                     .padding(.top, 4)
@@ -691,6 +725,10 @@ struct SettingsView: View {
 
 struct BudgetRow: View {
     let budget: Budget
+    let canMoveUp: Bool
+    let canMoveDown: Bool
+    let onMoveUp: () -> Void
+    let onMoveDown: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
 
@@ -710,6 +748,30 @@ struct BudgetRow: View {
             }
 
             Spacer()
+
+            VStack(spacing: 4) {
+                Button(action: onMoveUp) {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(Theme.headingColor(for: colorScheme))
+                        .frame(width: 32, height: 20)
+                        .background(Theme.headingColor(for: colorScheme).opacity(canMoveUp ? 0.1 : 0.04))
+                        .cornerRadius(6)
+                }
+                .disabled(!canMoveUp)
+                .opacity(canMoveUp ? 1 : 0.4)
+
+                Button(action: onMoveDown) {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(Theme.headingColor(for: colorScheme))
+                        .frame(width: 32, height: 20)
+                        .background(Theme.headingColor(for: colorScheme).opacity(canMoveDown ? 0.1 : 0.04))
+                        .cornerRadius(6)
+                }
+                .disabled(!canMoveDown)
+                .opacity(canMoveDown ? 1 : 0.4)
+            }
 
             Button(action: onEdit) {
                 Image(systemName: "pencil")

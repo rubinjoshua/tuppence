@@ -43,7 +43,9 @@ def sync_budgets(db: Session, household_id: UUID, budgets: List[BudgetItem]) -> 
 
 def get_all_budgets(db: Session, household_id: UUID) -> List[BudgetItem]:
     """Get all budgets for a household."""
-    budgets = db.query(Budget).filter(Budget.household_id == household_id).all()
+    budgets = db.query(Budget).filter(
+        Budget.household_id == household_id
+    ).order_by(Budget.sort_order.asc(), Budget.created_at.asc()).all()
     return [
         BudgetItem(
             emoji=b.emoji,

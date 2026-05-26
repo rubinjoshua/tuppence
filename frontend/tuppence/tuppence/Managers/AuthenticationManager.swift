@@ -22,6 +22,14 @@ class AuthenticationManager: ObservableObject {
     private var pendingAppleNonce: String?
 
     private init() {
+        // Re-save existing keychain items under the new AfterFirstUnlock
+        // accessibility class so App Intents triggered from background
+        // contexts can read the session token reliably.
+        keychain.upgradeAccessibilityIfNeeded(for: KeychainHelper.Keys.sessionToken)
+        keychain.upgradeAccessibilityIfNeeded(for: KeychainHelper.Keys.userId)
+        keychain.upgradeAccessibilityIfNeeded(for: KeychainHelper.Keys.userEmail)
+        keychain.upgradeAccessibilityIfNeeded(for: KeychainHelper.Keys.householdId)
+        keychain.upgradeAccessibilityIfNeeded(for: KeychainHelper.Keys.householdName)
         checkAuthState()
     }
 

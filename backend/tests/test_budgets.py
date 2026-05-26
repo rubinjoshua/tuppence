@@ -567,3 +567,62 @@ class TestDeleteBudget:
         # Verify budget still exists
         budget = db.query(Budget).filter(Budget.id == budget_id).first()
         assert budget is not None
+
+
+class TestReorderBudgets:
+    """Test POST /budgets/reorder"""
+
+    def _make_three_budgets(self, db, household):
+        b1 = Budget(household_id=household.id, emoji="🛒", label="Groceries", monthly_amount=500, sort_order=0)
+        b2 = Budget(household_id=household.id, emoji="⛽", label="Gas", monthly_amount=200, sort_order=1)
+        b3 = Budget(household_id=household.id, emoji="🍔", label="Eating Out", monthly_amount=300, sort_order=2)
+        db.add_all([b1, b2, b3])
+        db.commit()
+        return b1, b2, b3
+
+    def test_reorder_full_list(self, client, db, auth_headers):
+        b1, b2, b3 = self._make_three_budgets(db, auth_headers["household"])
+
+        response = client.post(
+            "/budgets/reorder",
+            json={"budget_ids": [b3.id, b1.id, b2.id]},
+            headers={"Authorization": auth_headers["Authorization"]},
+        )
+
+        assert response.status_code == 200
+
+        # List should now return budgets in new order
+        list_resp = client.get("/budgets", headers={"Authorization": auth_headers["Authorization"]})
+        emojis = [b["emoji"] for b in list_resp.json()["budgets"]]
+        assert emojis == ["🍔", "🛒", "⛽"]
+
+    def test_reorder_partial_list_appends_remaining(self, client, db, auth_headers):
+        b1, b2, b3 = self._make_three_budgets(db, auth_headers["household"])
+
+        response = client.post(
+            "/budgets/reorder",
+            json={"budget_ids": [b3.id]},
+            headers={"Authorization": auth_headers["Authorization"]},
+        )
+
+        assert response.status_code == 200
+
+        list_resp = client.get("/budgets", headers={"Authorization": auth_headers["Authorization"]})
+        emojis = [b["emoji"] for b in list_resp.json()["budgets"]]
+        assert emojis[0] == "🍔"
+        assert set(emojis[1:]) == {"🛒", "⛽"}
+
+    def test_reorder_rejects_foreign_budget(self, client, db, auth_headers, second_household):
+        b1, _, _ = self._make_three_budgets(db, auth_headers["household"])
+        foreign = Budget(household_id=second_household["household"].id, emoji="✈️", label="Travel", monthly_amount=100, sort_order=0)
+        db.add(foreign)
+        db.commit()
+        foreign_id = foreign.id
+
+        response = client.post(
+            "/budgets/reorder",
+            json={"budget_ids": [b1.id, foreign_id]},
+            headers={"Authorization": auth_headers["Authorization"]},
+        )
+
+        assert response.status_code == 400
