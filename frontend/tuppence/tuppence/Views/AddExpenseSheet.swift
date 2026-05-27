@@ -10,99 +10,174 @@ struct AddExpenseSheet: View {
     let budgets: [Budget]
     let onAddExpense: (Int, String, String) async -> Void
 
-    @State private var selectedEmoji: String = ""
-    @State private var hasPickedBudget: Bool = false
-    @State private var description: String = ""
-    @State private var isPositive: Bool = false  // Default to - (expense)
+    @State private var step: Step = .amount
     @State private var amountText: String = ""
-    @State private var isShowingEmojiPicker = false
-    @State private var isShowingSignPicker = false
+    @State private var isPositive: Bool = false
+    @State private var description: String = ""
+    @State private var showConfirmation: Bool = false
+    @State private var isLogging: Bool = false
     @FocusState private var focusedField: Field?
 
     @Environment(\.colorScheme) var colorScheme
     @ObservedObject private var settings = AppSettings.shared
 
-    private enum Field {
-        case description
+    private enum Step {
         case amount
+        case description
+        case budget
     }
 
-    init(isPresented: Binding<Bool>, budgets: [Budget], onAddExpense: @escaping (Int, String, String) async -> Void) {
-        self._isPresented = isPresented
-        self.budgets = budgets
-        self.onAddExpense = onAddExpense
+    private enum Field {
+        case amount
+        case description
     }
 
     var body: some View {
         ZStack {
-            // Dimmed background with tap-to-dismiss
             Color.black.opacity(0.3)
                 .ignoresSafeArea()
-                .onTapGesture(perform: handleBackgroundTap)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: cancel)
 
-            VStack(spacing: 0) {
-                if hasPickedBudget {
-                    expenseEntryRow
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 16)
-                        .background(liquidGlassBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .shadow(
-                            color: Theme.shadowColor(for: colorScheme).opacity(0.3),
-                            radius: 8,
-                            x: 0,
-                            y: 4
-                        )
-                        .padding(.horizontal, 40)
-                } else {
-                    inlineBudgetPicker
-                        .padding(.horizontal, 20)
-                }
+            VStack {
+                Spacer()
+                stepCard
+                    .padding(.horizontal, 30)
+                Spacer()
             }
-            .frame(maxHeight: .infinity, alignment: .center)
+            .allowsHitTesting(!showConfirmation)
 
-            // Re-select emoji from entry row
-            if isShowingEmojiPicker {
-                emojiPickerOverlay
-            }
-
-            // Sign picker
-            if isShowingSignPicker {
-                signPickerOverlay
+            if showConfirmation {
+                addedConfirmation
+                    .transition(.opacity)
             }
         }
-        .onAppear {
-            // Reset to defaults when appearing — user picks budget first.
-            selectedEmoji = ""
-            hasPickedBudget = false
-            description = ""
-            isPositive = false  // Default to - (expense)
-            amountText = ""
+        .onAppear(perform: resetState)
+    }
+
+    @ViewBuilder
+    private var stepCard: some View {
+        switch step {
+        case .amount:      amountStep
+        case .description: descriptionStep
+        case .budget:      budgetStep
         }
     }
 
-    // MARK: - Inline Budget Picker (initial state)
+    // MARK: - Step 1: Amount
 
-    private var inlineBudgetPicker: some View {
-        VStack(spacing: 0) {
-            Text("Pick a budget")
+    private var amountStep: some View {
+        VStack(spacing: 16) {
+            Text("Amount")
                 .themedText(size: 15)
                 .opacity(0.7)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                .padding(.bottom, 8)
+
+            HStack(spacing: 12) {
+                signToggle
+
+                HStack(spacing: 4) {
+                    Text(settings.currencySymbol)
+                        .themedText(size: 28)
+                    TextField("0", text: $amountText)
+                        .font(Theme.Fonts.body(size: 28))
+                        .foregroundColor(Theme.textColor(for: colorScheme))
+                        .keyboardType(.numberPad)
+                        .focused($focusedField, equals: .amount)
+                        .multilineTextAlignment(.leading)
+                        .onChange(of: amountText) { _, v in
+                            amountText = v.filter { $0.isNumber }
+                        }
+                        .toolbar {
+                            ToolbarItemGroup(placement: .keyboard) {
+                                Spacer()
+                                Button("Next") { advanceFromAmount() }
+                                    .disabled(!isAmountValid)
+                            }
+                        }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(20)
+        .background(card)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                focusedField = .amount
+            }
+        }
+    }
+
+    private var signToggle: some View {
+        HStack(spacing: 0) {
+            signPill("−", isOn: !isPositive) { isPositive = false }
+            signPill("+", isOn: isPositive) { isPositive = true }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+        )
+    }
+
+    private func signPill(_ symbol: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(symbol)
+                .themedText(size: 20)
+                .frame(width: 36, height: 36)
+                .background(isOn ? Color.white.opacity(0.25) : Color.clear)
+                .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Step 2: Description
+
+    private var descriptionStep: some View {
+        VStack(spacing: 12) {
+            HStack {
+                backChevron { goBack(to: .amount) }
+                Text("Description")
+                    .themedText(size: 15)
+                    .opacity(0.7)
+                Spacer()
+            }
+
+            TextField("description", text: $description)
+                .font(Theme.Fonts.body(size: 22))
+                .foregroundColor(Theme.textColor(for: colorScheme))
+                .focused($focusedField, equals: .description)
+                .submitLabel(.next)
+                .onSubmit(advanceFromDescription)
+        }
+        .padding(20)
+        .background(card)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                focusedField = .description
+            }
+        }
+    }
+
+    // MARK: - Step 3: Budget
+
+    private var budgetStep: some View {
+        VStack(spacing: 0) {
+            HStack {
+                backChevron { goBack(to: .description) }
+                Text("Budget")
+                    .themedText(size: 15)
+                    .opacity(0.7)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
 
             VStack(spacing: 6) {
                 ForEach(budgets) { budget in
-                    Button(action: {
-                        selectedEmoji = budget.emoji
-                        hasPickedBudget = true
-                        // Move focus to the description field so the user can type immediately.
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            focusedField = .description
-                        }
-                    }) {
+                    Button(action: { pickBudget(budget) }) {
                         HStack(spacing: 12) {
                             Text(budget.emoji)
                                 .font(.system(size: 22 * Theme.Layout.emojiScale))
@@ -112,288 +187,136 @@ struct AddExpenseSheet: View {
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
-                        .background(Color.white.opacity(0.001))  // Hit-test fill
+                        .background(Color.white.opacity(0.001))
                         .contentShape(Rectangle())
                     }
+                    .disabled(isLogging)
                 }
             }
             .padding(.bottom, 12)
         }
-        .background(liquidGlassBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(
-            color: Theme.shadowColor(for: colorScheme).opacity(0.3),
-            radius: 8,
-            x: 0,
-            y: 4
-        )
+        .background(card)
+        .onAppear {
+            focusedField = nil
+        }
     }
 
-    // MARK: - Main Expense Entry Row
+    // MARK: - Back chevron
 
-    private var expenseEntryRow: some View {
-        HStack(spacing: 8) {
-            // Emoji
-            Button(action: {
-                focusedField = nil
-                // Delay to avoid lag when dismissing keyboard
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    isShowingEmojiPicker.toggle()
-                    isShowingSignPicker = false
-                }
-            }) {
-                Text(selectedEmoji)
-                    .font(.system(size: 20 * Theme.Layout.emojiScale))
-                    .shadow(
-                        color: Theme.shadowColor(for: colorScheme).opacity(0.3),
-                        radius: Theme.Layout.shadowRadius,
-                        x: Theme.Layout.shadowX,
-                        y: Theme.Layout.shadowY
-                    )
-            }
-
-            // Description (2 lines, optimized for no lag)
-            TextField("description", text: $description, axis: .vertical)
-                .font(Theme.Fonts.body(size: 17))
+    private func backChevron(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(Theme.textColor(for: colorScheme))
-                .focused($focusedField, equals: .description)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .lineLimit(2)
-                .onSubmit {
-                    focusedField = nil
-                }
-
-            // +/- toggle
-            Button(action: {
-                focusedField = nil
-                // Delay to avoid lag when dismissing keyboard
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    isShowingSignPicker.toggle()
-                    isShowingEmojiPicker = false
-                }
-            }) {
-                Text(isPositive ? "+" : "-")
-                    .themedText(size: 17)
-                    .frame(minWidth: 20)
-            }
-
-            // Currency symbol and amount (tighter spacing)
-            HStack(spacing: 2) {
-                Text(settings.currencySymbol)
-                    .themedText(size: 17)
-
-                TextField("0", text: $amountText)
-                    .font(Theme.Fonts.body(size: 17))
-                    .foregroundColor(Theme.textColor(for: colorScheme))
-                    .keyboardType(.numberPad)
-                    .multilineTextAlignment(.trailing)
-                    .focused($focusedField, equals: .amount)
-                    .frame(width: 60, alignment: .trailing)
-                    .onChange(of: amountText) { _, newValue in
-                        // Only allow digits
-                        amountText = newValue.filter { $0.isNumber }
-                    }
-            }
-
-            // Confirm button — glass, not red. The red caret was misleading
-            // (looked like a "delete" affordance). Liquid Glass on iOS 26;
-            // translucent material on iOS 18.
-            Button(action: handleAddExpense) {
-                Image(systemName: "plus")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(Theme.textColor(for: colorScheme))
-                    .frame(width: 32, height: 32)
-                    .background(confirmButtonBackground)
-                    .clipShape(Circle())
-            }
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
         }
     }
 
-    // MARK: - Pickers
+    // MARK: - Confirmation overlay
 
-    private var emojiPickerOverlay: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(spacing: 8) {
-                    ForEach(budgets) { budget in
-                        Button(action: {
-                            selectedEmoji = budget.emoji
-                            isShowingEmojiPicker = false
-                        }) {
-                            HStack {
-                                Text(budget.emoji)
-                                    .font(.system(size: 20 * Theme.Layout.emojiScale))
-                                Text(budget.label)
-                                    .themedText(size: 17)
-                                Spacer()
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(selectedEmoji == budget.emoji ? Color.white.opacity(0.2) : Color.clear)
-                            .cornerRadius(8)
-                        }
-                    }
-                }
-                .padding(.vertical, 8)
-            }
-            .frame(maxHeight: 200)
-            .padding(.horizontal, 20)
-            .background(liquidGlassBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .shadow(
-                color: Theme.shadowColor(for: colorScheme).opacity(0.3),
-                radius: 8,
-                x: 0,
-                y: 4
-            )
-            .padding(.horizontal, 20)
+    private var addedConfirmation: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 56, weight: .semibold))
+                .foregroundColor(Theme.textColor(for: colorScheme))
+            Text("Added")
+                .themedText(size: 17)
         }
-        .frame(maxHeight: .infinity, alignment: .center)
-        .padding(.top, 80)
+        .padding(.horizontal, 40)
+        .padding(.vertical, 32)
+        .background(card)
     }
 
-    private var signPickerOverlay: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 8) {
-                Button(action: {
-                    isPositive = true
-                    isShowingSignPicker = false
-                }) {
-                    HStack {
-                        Text("+")
-                            .themedText(size: 20)
-                        Text("Income")
-                            .themedText(size: 17)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(isPositive ? Color.white.opacity(0.2) : Color.clear)
-                    .cornerRadius(8)
-                }
-
-                Button(action: {
-                    isPositive = false
-                    isShowingSignPicker = false
-                }) {
-                    HStack {
-                        Text("-")
-                            .themedText(size: 20)
-                        Text("Expense")
-                            .themedText(size: 17)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(!isPositive ? Color.white.opacity(0.2) : Color.clear)
-                    .cornerRadius(8)
-                }
-            }
-            .padding(.vertical, 8)
-            .padding(.horizontal, 20)
-            .background(liquidGlassBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .shadow(
-                color: Theme.shadowColor(for: colorScheme).opacity(0.3),
-                radius: 8,
-                x: 0,
-                y: 4
-            )
-            .padding(.horizontal, 20)
-        }
-        .frame(maxHeight: .infinity, alignment: .center)
-        .padding(.top, 80)
-    }
-
-    // MARK: - Backgrounds
+    // MARK: - Card background
 
     @ViewBuilder
-    private var liquidGlassBackground: some View {
+    private var card: some View {
         if #available(iOS 18.0, *) {
-            // iOS 18+ liquid glass effect
             RoundedRectangle(cornerRadius: 16)
                 .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(
-                            LinearGradient(
-                                gradient: Gradient(colors: [
-                                    Color.white.opacity(0.3),
-                                    Color.white.opacity(0.1)
-                                ]),
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                        .fill(LinearGradient(
+                            colors: [Color.white.opacity(0.3), Color.white.opacity(0.1)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ))
                 )
+                .shadow(color: Theme.shadowColor(for: colorScheme).opacity(0.3), radius: 8, x: 0, y: 4)
         } else {
-            // iOS 17 fallback - glass-ish transparency
             RoundedRectangle(cornerRadius: 16)
                 .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.white.opacity(0.15))
-                )
+                .overlay(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.15)))
+                .shadow(color: Theme.shadowColor(for: colorScheme).opacity(0.3), radius: 8, x: 0, y: 4)
         }
     }
 
-    @ViewBuilder
-    private var confirmButtonBackground: some View {
-        if #available(iOS 26.0, *) {
-            // Native Liquid Glass on iOS 26.
-            Circle()
-                .fill(.clear)
-                .glassEffect(.regular.interactive(), in: Circle())
-        } else {
-            // iOS 18: translucent material so the button reads as glass
-            // rather than the red heading color.
-            Circle()
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    Circle().stroke(Theme.textColor(for: colorScheme).opacity(0.2), lineWidth: 0.5)
-                )
-        }
+    // MARK: - State + transitions
+
+    private var isAmountValid: Bool {
+        if let n = Int(amountText), n > 0 { return true }
+        return false
     }
 
-    // MARK: - Actions
+    private func resetState() {
+        step = .amount
+        amountText = ""
+        isPositive = false
+        description = ""
+        showConfirmation = false
+        isLogging = false
+    }
 
-    private func handleBackgroundTap() {
-        // Dismiss keyboard first
+    private func cancel() {
         focusedField = nil
-
-        // Then dismiss pickers/sheet after a brief delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            if self.isShowingEmojiPicker || self.isShowingSignPicker {
-                self.isShowingEmojiPicker = false
-                self.isShowingSignPicker = false
-            } else {
-                self.isPresented = false
-            }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            isPresented = false
         }
     }
 
-    private func handleAddExpense() {
-        // Validate input
-        guard let amount = Int(amountText), amount > 0 else {
-            // Don't add if amount is 0 or invalid
-            return
+    private func goBack(to target: Step) {
+        focusedField = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            step = target
         }
+    }
 
-        guard !description.isEmpty else {
-            // Don't add if description is empty
-            return
+    private func advanceFromAmount() {
+        guard isAmountValid else { return }
+        focusedField = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            step = .description
         }
+    }
 
-        guard !selectedEmoji.isEmpty else {
-            // Don't add if no emoji selected
-            return
+    private func advanceFromDescription() {
+        guard !description.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        focusedField = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            step = .budget
         }
+    }
 
+    private func pickBudget(_ budget: Budget) {
+        guard let amount = Int(amountText), amount > 0,
+              !description.trimmingCharacters(in: .whitespaces).isEmpty,
+              !isLogging else { return }
+
+        isLogging = true
         let finalAmount = isPositive ? amount : -amount
 
         Task {
-            await onAddExpense(finalAmount, selectedEmoji, description)
-            isPresented = false
+            await onAddExpense(finalAmount, budget.emoji, description)
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showConfirmation = true
+                }
+            }
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            await MainActor.run {
+                isPresented = false
+            }
         }
     }
 }
