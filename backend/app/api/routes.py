@@ -25,9 +25,11 @@ from app.schemas.category import CategoryMapResponse
 from app.schemas.settings import (
     SyncSettingsRequest,
     SyncSettingsResponse,
+    GetSettingsResponse,
     CheckAutomationsResponse,
     ArchiveYearResponse,
 )
+import json
 from app.dependencies.auth import get_current_user_and_household
 from app.services.categorization_service import get_or_create_category
 from app.services.ledger_service import (
@@ -191,21 +193,54 @@ def sync_settings_endpoint(
     user_household: Tuple[User, Household] = Depends(get_current_user_and_household),
     db: Session = Depends(get_db),
 ):
-    """Upsert per-household settings (currency symbol)."""
+    """Upsert per-household settings.
+
+    `split_budget_options` is optional — omit to leave the existing value
+    untouched. Pass an empty list to explicitly clear it.
+    """
     _, household = user_household
 
     settings = db.query(SettingsModel).filter_by(household_id=household.id).first()
 
     if settings:
         settings.currency_symbol = request.currency_symbol
+        if request.split_budget_options is not None:
+            settings.split_budget_options = json.dumps(request.split_budget_options)
     else:
         db.add(SettingsModel(
             household_id=household.id,
             currency_symbol=request.currency_symbol,
+            split_budget_options=json.dumps(request.split_budget_options or []),
         ))
 
     db.commit()
     return SyncSettingsResponse(success=True)
+
+
+@router.get("/settings", response_model=GetSettingsResponse)
+def get_settings_endpoint(
+    user_household: Tuple[User, Household] = Depends(get_current_user_and_household),
+    db: Session = Depends(get_db),
+):
+    """Fetch this household's settings (currency + split-budget options)."""
+    _, household = user_household
+
+    settings = db.query(SettingsModel).filter_by(household_id=household.id).first()
+
+    if settings is None:
+        return GetSettingsResponse(currency_symbol="$", split_budget_options=[])
+
+    try:
+        split_options = json.loads(settings.split_budget_options or "[]")
+        if not isinstance(split_options, list):
+            split_options = []
+    except (json.JSONDecodeError, TypeError):
+        split_options = []
+
+    return GetSettingsResponse(
+        currency_symbol=settings.currency_symbol,
+        split_budget_options=[str(s) for s in split_options],
+    )
 
 
 # ============================================================================

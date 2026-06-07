@@ -1,6 +1,6 @@
 """Settings table - Per-household application settings"""
 
-from sqlalchemy import Column, String, Date, ForeignKey
+from sqlalchemy import Column, String, Date, ForeignKey, Text
 from app.models._types import GUID
 
 from app.database import Base
@@ -15,6 +15,10 @@ class Settings(Base):
         - currency_symbol: Currency symbol (e.g., "$", "€", "₪")
         - last_monthly_update_date: Last date monthly automation ran
         - last_yearly_archive_date: Last date year was archived
+        - split_budget_options: JSON-encoded list of multi-emoji strings used
+          to split a single spending across multiple budgets (e.g. "🛒🦊"
+          splits between two budgets). Stored as text for SQLite/Postgres
+          parity. Default "[]".
     """
 
     __tablename__ = "settings"
@@ -27,6 +31,7 @@ class Settings(Base):
     currency_symbol = Column(String(3), nullable=False, default="$")
     last_monthly_update_date = Column(Date, nullable=True)
     last_yearly_archive_date = Column(Date, nullable=True)
+    split_budget_options = Column(Text, nullable=False, default="[]", server_default="[]")
 
     def __repr__(self):
         return f"<Settings(household={self.household_id}, currency={self.currency_symbol}, last_update={self.last_monthly_update_date})>"

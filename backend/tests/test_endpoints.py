@@ -82,6 +82,7 @@ class TestAuthGating:
         ("post", "/make_spending"),
         ("delete", "/undo_spending/00000000-0000-0000-0000-000000000000"),
         ("post", "/sync_settings"),
+        ("get", "/settings"),
         ("post", "/check_automations"),
         ("get", "/export_year?year=2026"),
         ("post", "/archive_year?year=2026"),
@@ -209,6 +210,51 @@ class TestSyncSettings:
         updated = db.query(Settings).filter_by(household_id=alice["household_id"]).first()
         assert updated.currency_symbol == "₪"
 
+    def test_split_budget_options_roundtrip(self, client, alice):
+        client.post(
+            "/sync_settings",
+            json={"currency_symbol": "$", "split_budget_options": ["🛒🦊", "🛒🦊🦩"]},
+            headers=alice["headers"],
+        )
+
+        resp = client.get("/settings", headers=alice["headers"]).json()
+        assert resp["currency_symbol"] == "$"
+        assert resp["split_budget_options"] == ["🛒🦊", "🛒🦊🦩"]
+
+    def test_split_budget_options_omitted_leaves_existing(self, client, alice):
+        client.post(
+            "/sync_settings",
+            json={"currency_symbol": "$", "split_budget_options": ["🛒🦊"]},
+            headers=alice["headers"],
+        )
+        # Omit the field — must not clobber the stored list.
+        client.post(
+            "/sync_settings",
+            json={"currency_symbol": "€"},
+            headers=alice["headers"],
+        )
+        resp = client.get("/settings", headers=alice["headers"]).json()
+        assert resp["currency_symbol"] == "€"
+        assert resp["split_budget_options"] == ["🛒🦊"]
+
+    def test_split_budget_options_can_be_explicitly_cleared(self, client, alice):
+        client.post(
+            "/sync_settings",
+            json={"currency_symbol": "$", "split_budget_options": ["🛒🦊"]},
+            headers=alice["headers"],
+        )
+        client.post(
+            "/sync_settings",
+            json={"currency_symbol": "$", "split_budget_options": []},
+            headers=alice["headers"],
+        )
+        resp = client.get("/settings", headers=alice["headers"]).json()
+        assert resp["split_budget_options"] == []
+
+    def test_get_settings_defaults_when_no_row(self, client, alice):
+        resp = client.get("/settings", headers=alice["headers"]).json()
+        assert resp == {"currency_symbol": "$", "split_budget_options": []}
+
 
 class TestCheckAutomations:
     def test_no_budgets(self, client, alice):
@@ -263,3 +309,38 @@ class TestCategoryMap:
     def test_missing_emoji_returns_400(self, client, alice):
         response = client.get("/category_map", headers=alice["headers"])
         assert response.status_code == 400
+
+    def test_returns_per_entry_amount_and_datetime(self, client, db, alice, mock_categorizer):
+        db.add(Budget(household_id=alice["household_id"], emoji="🛒", label="Groc", monthly_amount=500))
+        db.commit()
+
+        client.post(
+            "/make_spending",
+            json={"amount": -10, "currency": "USD", "budget_emoji": "🛒", "description_text": "milk"},
+            headers=alice["headers"],
+        )
+        client.post(
+            "/make_spending",
+            json={"amount": -25, "currency": "USD", "budget_emoji": "🛒", "description_text": "bread"},
+            headers=alice["headers"],
+        )
+
+        resp = client.get("/category_map?budget_emoji=🛒", headers=alice["headers"]).json()
+        assert "categories" in resp
+        assert len(resp["categories"]) == 1
+
+        category = resp["categories"][0]
+        assert category["category_name"] == "Groceries"
+        assert category["total_amount"] == 35
+        assert "entries" in category
+        assert len(category["entries"]) == 2
+
+        # Each entry has description + amount (positive abs) + datetime (ISO string)
+        for entry in category["entries"]:
+            assert isinstance(entry["description"], str)
+            assert isinstance(entry["amount"], int)
+            assert entry["amount"] > 0
+            assert isinstance(entry["datetime"], str)
+
+        descriptions = {e["description"] for e in category["entries"]}
+        assert descriptions == {"milk", "bread"}

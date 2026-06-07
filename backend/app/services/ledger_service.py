@@ -11,7 +11,7 @@ from app.models.budget import Budget
 from app.models.category import Category
 from app.schemas.ledger import LedgerEntryResponse
 from app.schemas.budget import BudgetWithTotal
-from app.schemas.category import CategoryBreakdown
+from app.schemas.category import CategoryBreakdown, CategoryEntry
 
 
 def get_amounts_for_current_year(
@@ -101,12 +101,23 @@ def get_category_map(
         LedgerEntry.amount < 0,
     ).all()
 
-    category_data = {}
+    category_data: dict = {}
     for entry in entries:
-        if entry.category not in category_data:
-            category_data[entry.category] = {'texts': [], 'total_amount': 0}
-        category_data[entry.category]['texts'].append(entry.description_text or "")
-        category_data[entry.category]['total_amount'] += abs(entry.amount)
+        bucket = category_data.setdefault(
+            entry.category,
+            {'entries': [], 'total_amount': 0},
+        )
+        bucket['entries'].append(CategoryEntry(
+            description=entry.description_text or "",
+            amount=abs(entry.amount),
+            datetime=entry.datetime,
+        ))
+        bucket['total_amount'] += abs(entry.amount)
+
+    # Newest first within each category — matches the Spendings page where
+    # today is at the bottom but the user wants the most recent on top.
+    for data in category_data.values():
+        data['entries'].sort(key=lambda e: e.datetime, reverse=True)
 
     categories = db.query(Category).filter(
         Category.category_name.in_(category_data.keys())
@@ -117,7 +128,7 @@ def get_category_map(
         CategoryBreakdown(
             category_name=category_name,
             hex_color=color_map.get(category_name, "#CCCCCC"),
-            texts=data['texts'],
+            entries=data['entries'],
             total_amount=data['total_amount'],
         )
         for category_name, data in category_data.items()
