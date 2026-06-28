@@ -291,10 +291,12 @@ async def apple_signin(
                 detail="Account is inactive"
             )
 
-        # Get user's default household (first household they're a member of)
+        # Prefer the most recently joined household so users who joined someone
+        # else's household via sharing-token land in it on login, not their
+        # stale auto-created "My Household". Matches /auth/login behavior.
         membership = db.query(HouseholdMember).filter(
             HouseholdMember.user_id == user.id
-        ).first()
+        ).order_by(HouseholdMember.joined_at.desc()).first()
 
         if not membership:
             raise HTTPException(
