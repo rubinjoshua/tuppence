@@ -285,6 +285,62 @@ class TestCheckAutomations:
         assert alice_entries[0].budget_emoji == "🛒"
         assert len(bob_entries) == 0
 
+    def test_ledger_datetime_stamped_to_first_of_month(self, client, db, alice):
+        """Automation should stamp the ledger entry to the 1st, not "now"."""
+        db.add(Budget(household_id=alice["household_id"], emoji="🛒", label="G", monthly_amount=500))
+        db.commit()
+
+        client.post("/check_automations", headers=alice["headers"])
+        entry = db.query(LedgerEntry).filter_by(household_id=alice["household_id"]).one()
+
+        now = datetime.now(timezone.utc)
+        assert entry.datetime.year == now.year
+        assert entry.datetime.month == now.month
+        assert entry.datetime.day == 1
+        assert entry.datetime.hour == 0
+        assert entry.datetime.minute == 0
+
+
+class TestSchedulerAutomation:
+    """Direct tests for run_monthly_automation_for_all — the BE scheduler entry point."""
+
+    def test_processes_all_households(self, db, alice, bob):
+        from app.services.automation_service import run_monthly_automation_for_all
+
+        db.add(Budget(household_id=alice["household_id"], emoji="🛒", label="A", monthly_amount=500))
+        db.add(Budget(household_id=bob["household_id"], emoji="✈️", label="B", monthly_amount=300))
+        db.commit()
+
+        updated = run_monthly_automation_for_all(db)
+        assert updated == 2
+
+        # Second run is a no-op — settings.last_monthly_update_date guards it.
+        updated_again = run_monthly_automation_for_all(db)
+        assert updated_again == 0
+
+    def test_survives_household_failure(self, db, alice, bob, monkeypatch):
+        """One bad household mustn't stop the others from running."""
+        from app.services import automation_service
+
+        db.add(Budget(household_id=alice["household_id"], emoji="🛒", label="A", monthly_amount=500))
+        db.add(Budget(household_id=bob["household_id"], emoji="✈️", label="B", monthly_amount=300))
+        db.commit()
+
+        real = automation_service.check_and_run_monthly_automation
+        alice_hid = alice["household_id"]
+
+        def flaky(db, household_id):
+            if household_id == alice_hid:
+                raise RuntimeError("simulated failure")
+            return real(db, household_id)
+
+        monkeypatch.setattr(automation_service, "check_and_run_monthly_automation", flaky)
+
+        updated = automation_service.run_monthly_automation_for_all(db)
+        assert updated == 1
+        bob_entries = db.query(LedgerEntry).filter_by(household_id=bob["household_id"]).all()
+        assert len(bob_entries) == 1
+
 
 class TestExportYear:
     def test_only_returns_own_household(self, client, db, alice, bob, mock_categorizer):
