@@ -6,10 +6,18 @@
 import Foundation
 import SwiftUI
 
+struct CategoryEntry: Codable, Identifiable, Hashable {
+    let description: String
+    let amount: Int      // positive (expense magnitude)
+    let datetime: Date
+
+    var id: String { "\(datetime.timeIntervalSince1970)-\(description)-\(amount)" }
+}
+
 struct CategoryData: Codable, Identifiable {
     let categoryName: String
     let hexColor: String
-    let texts: [String]
+    let entries: [CategoryEntry]
     let totalAmount: Int
 
     var id: String { categoryName }
@@ -21,7 +29,7 @@ struct CategoryData: Codable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case categoryName = "category_name"
         case hexColor = "hex_color"
-        case texts
+        case entries
         case totalAmount = "total_amount"
     }
 }

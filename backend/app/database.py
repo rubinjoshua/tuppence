@@ -136,12 +136,20 @@ def init_db() -> None:
     session_local = get_session_local()
     db = session_local()
     try:
-        if db.query(Category).count() == 0:
-            print("Seeding categories...")
-            for i, category_name in enumerate(PREDEFINED_CATEGORIES):
+        existing_categories = {
+            name for (name,) in db.query(Category.category_name).all()
+        }
+        missing_categories = [
+            (i, name)
+            for i, name in enumerate(PREDEFINED_CATEGORIES)
+            if name not in existing_categories
+        ]
+        if missing_categories:
+            print(f"Seeding {len(missing_categories)} missing categories...")
+            for i, category_name in missing_categories:
                 color = WES_ANDERSON_COLORS[i % len(WES_ANDERSON_COLORS)]
                 db.add(Category(category_name=category_name, hex_color=color))
             db.commit()
-            print(f"Seeded {len(PREDEFINED_CATEGORIES)} categories")
+            print("Category seed complete")
     finally:
         db.close()

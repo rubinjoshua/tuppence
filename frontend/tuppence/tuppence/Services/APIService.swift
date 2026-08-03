@@ -132,6 +132,15 @@ class APIService {
         let _: SuccessResponse = try await delete(endpoint: "/undo_spending/\(uuid)")
     }
 
+    func updateSpending(uuid: String, amount: Int, budgetEmoji: String, description: String) async throws -> LedgerEntry {
+        let request = UpdateSpendingRequest(
+            amount: amount,
+            budgetEmoji: budgetEmoji,
+            descriptionText: description
+        )
+        return try await put(endpoint: "/spending/\(uuid)", body: request)
+    }
+
     // MARK: - Budget Management (CRUD)
 
     func listBudgets() async throws -> [Budget] {
@@ -160,9 +169,13 @@ class APIService {
 
     // MARK: - Configuration
 
-    func syncSettings(currencySymbol: String) async throws {
-        let request = ["currency_symbol": currencySymbol]
+    func syncSettings(currencySymbol: String, splitBudgetOptions: [String]? = nil) async throws {
+        let request = SyncSettingsRequest(currencySymbol: currencySymbol, splitBudgetOptions: splitBudgetOptions)
         let _: SuccessResponse = try await post(endpoint: "/sync_settings", body: request)
+    }
+
+    func getSettings() async throws -> SettingsResponse {
+        try await get(endpoint: "/settings")
     }
 
     // MARK: - Automations
@@ -448,6 +461,28 @@ private struct ReorderBudgetsResponse: Codable {
     let success: Bool
 }
 
+// MARK: - Settings Types
+
+private struct SyncSettingsRequest: Codable {
+    let currencySymbol: String
+    let splitBudgetOptions: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case currencySymbol = "currency_symbol"
+        case splitBudgetOptions = "split_budget_options"
+    }
+}
+
+struct SettingsResponse: Codable {
+    let currencySymbol: String
+    let splitBudgetOptions: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case currencySymbol = "currency_symbol"
+        case splitBudgetOptions = "split_budget_options"
+    }
+}
+
 // MARK: - Household Types
 
 private struct GenerateSharingTokenRequest: Codable {
@@ -473,4 +508,3 @@ struct JoinedHousehold: Codable {
     let id: String
     let name: String
 }
-

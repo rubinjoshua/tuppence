@@ -26,6 +26,16 @@ private func isCancellation(_ error: Error) -> Bool {
     return false
 }
 
+/// Network-class errors that mean "retry later, don't surface to user".
+/// Anything that's a URLError or APIError.requestFailed/invalidResponse
+/// gets queued; explicit HTTP errors (4xx/5xx) don't.
+private func isNetworkError(_ error: Error) -> Bool {
+    if error is URLError { return true }
+    if case APIError.requestFailed = error { return true }
+    if case APIError.invalidResponse = error { return true }
+    return false
+}
+
 @MainActor
 class AppViewModel: ObservableObject {
     @Published var budgets: [Budget] = []
@@ -38,6 +48,13 @@ class AppViewModel: ObservableObject {
     private let apiService = APIService.shared
     private let settings = AppSettings.shared
 
+    // Raw server data. Public `budgets` / `ledgerEntries` are these merged
+    // with the pending offline queue so the UI is optimistic without
+    // duplicating server entries.
+    private var serverBudgets: [Budget] = []
+    private var serverLedgerEntries: [LedgerEntry] = []
+    private var loadedMonth: Date?
+
     // App Group container so the cache is shared with the widget.
     private static let cachedBudgetsKey = "cached_budgets"
     private var sharedDefaults: UserDefaults {
@@ -47,7 +64,8 @@ class AppViewModel: ObservableObject {
     init() {
         // Seed budgets from the on-disk cache so the Amount page doesn't
         // flash zeros while /amounts is in flight.
-        budgets = loadCachedBudgets()
+        serverBudgets = loadCachedBudgets()
+        rebuildDisplayed()
 
         // Observe app lifecycle for syncing
         NotificationCenter.default.addObserver(
@@ -71,6 +89,27 @@ class AppViewModel: ObservableObject {
             name: .budgetsDidChange,
             object: nil
         )
+
+        // Drain the pending queue when the device comes back online.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleNetworkOnline),
+            name: NetworkMonitor.didGoOnlineNotification,
+            object: nil
+        )
+
+        // Same-process notifications when the queue file is mutated.
+        // (Cross-process changes from the Intent extension are picked up
+        // on the next foreground refresh.)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleStoreChanged),
+            name: PendingExpenseStore.didChangeNotification,
+            object: nil
+        )
+
+        // Force NWPathMonitor to start observing as early as possible.
+        _ = NetworkMonitor.shared
     }
 
     @objc private func handleBudgetsChanged() {
@@ -92,16 +131,48 @@ class AppViewModel: ObservableObject {
         }
     }
 
+    @objc private func handleNetworkOnline() {
+        Task {
+            await drainPendingQueue()
+            await loadAmounts()
+        }
+    }
+
+    @objc private func handleStoreChanged() {
+        Task { @MainActor in
+            rebuildDisplayed()
+        }
+    }
+
     func syncAndLoad() async {
+        // Flush any expenses queued while offline / from the Intent before
+        // we re-fetch from the server, so the refreshed data already
+        // reflects the new state.
+        await drainPendingQueue()
         await syncSettings()
         await loadBudgets()
-        await checkAutomations()
+        // Monthly budget automation runs on the backend (hourly scheduler);
+        // the client doesn't need to nudge it.
         await loadAmounts()
     }
 
     // MARK: - Sync Functions
 
     private func syncSettings() async {
+        // Pull authoritative state from the backend first so a household
+        // member's changes on another device are picked up. Then push our
+        // currency back (it's still device-driven via Settings.bundle).
+        do {
+            let remote = try await apiService.getSettings()
+            await MainActor.run {
+                if remote.splitBudgetOptions != settings.splitBudgetOptions {
+                    settings.splitBudgetOptions = remote.splitBudgetOptions
+                }
+            }
+        } catch {
+            print("Failed to fetch settings: \(error)")
+        }
+
         do {
             try await apiService.syncSettings(currencySymbol: settings.currencySymbol)
         } catch {
@@ -116,28 +187,21 @@ class AppViewModel: ObservableObject {
             // we already have (from cache or a previous /amounts call) so
             // the Amount page doesn't flash zeros between /budgets and the
             // /amounts call that follows in syncAndLoad().
-            let existingTotals: [String: Int] = budgets.reduce(into: [:]) { acc, b in
+            let existingTotals: [String: Int] = serverBudgets.reduce(into: [:]) { acc, b in
                 if let total = b.totalAmount { acc[b.emoji] = total }
             }
-            budgets = fetchedBudgets.map { fetched in
+            serverBudgets = fetchedBudgets.map { fetched in
                 var merged = fetched
                 if merged.totalAmount == nil, let prior = existingTotals[fetched.emoji] {
                     merged.totalAmount = prior
                 }
                 return merged
             }
+            rebuildDisplayed()
         } catch {
             print("Failed to load budgets: \(error)")
             // Keep what we already have — the cache + previous /amounts data
             // is still more useful than wiping to empty.
-        }
-    }
-
-    private func checkAutomations() async {
-        do {
-            try await apiService.checkAutomations()
-        } catch {
-            print("Failed to check automations: \(error)")
         }
     }
 
@@ -146,8 +210,9 @@ class AppViewModel: ObservableObject {
     func loadAmounts() async {
         guard AuthenticationManager.shared.isAuthenticated else {
             errorMessage = "Please sign in to view your budget data"
-            budgets = []
+            serverBudgets = []
             cacheBudgets([])
+            rebuildDisplayed()
             return
         }
 
@@ -156,14 +221,15 @@ class AppViewModel: ObservableObject {
 
         do {
             let response = try await apiService.getAmounts()
-            budgets = response.budgets
+            serverBudgets = response.budgets
             cacheBudgets(response.budgets)
+            rebuildDisplayed()
         } catch {
             // URLError.cancelled bubbles up when SwiftUI cancels the host
             // Task (e.g. .refreshable mid-state-update). Treating it as an
             // error spams a misleading alert; the next legitimate load will
             // overwrite the data anyway.
-            if !isCancellation(error) {
+            if !isCancellation(error) && !isNetworkError(error) {
                 errorMessage = "Failed to load amounts: \(error.localizedDescription)"
             }
             // Keep the previously cached budgets in the UI on failure so the
@@ -192,7 +258,8 @@ class AppViewModel: ObservableObject {
     func loadLedger(for month: Date?) async {
         guard AuthenticationManager.shared.isAuthenticated else {
             errorMessage = "Please sign in to view your spending history"
-            ledgerEntries = []
+            serverLedgerEntries = []
+            rebuildDisplayed()
             return
         }
 
@@ -201,9 +268,11 @@ class AppViewModel: ObservableObject {
 
         do {
             let monthString = month?.monthYearString
-            ledgerEntries = try await apiService.getLedger(month: monthString)
+            loadedMonth = month
+            serverLedgerEntries = try await apiService.getLedger(month: monthString)
+            rebuildDisplayed()
         } catch {
-            if !isCancellation(error) {
+            if !isCancellation(error) && !isNetworkError(error) {
                 errorMessage = "Failed to load ledger: \(error.localizedDescription)"
             }
         }
@@ -226,7 +295,9 @@ class AppViewModel: ObservableObject {
             let response = try await apiService.getCategoryMap(month: monthString, budgetEmoji: budgetEmoji)
             categoryData = response.categories
         } catch {
-            errorMessage = "Failed to load category map: \(error.localizedDescription)"
+            if !isCancellation(error) && !isNetworkError(error) {
+                errorMessage = "Failed to load category map: \(error.localizedDescription)"
+            }
         }
 
         isLoading = false
@@ -234,43 +305,95 @@ class AppViewModel: ObservableObject {
 
     // MARK: - Actions
 
-    func addSpending(amount: Int, budgetEmoji: String, description: String) async {
-        do {
-            let currency = settings.currencyCode
-            print("Adding spending: amount=\(amount), currency=\(currency), emoji=\(budgetEmoji), description=\(description)")
+    func addSpending(amount: Int, budgetEmojis: [String], description: String) async {
+        guard !budgetEmojis.isEmpty else { return }
+        let currency = settings.currencyCode
 
-            let response = try await apiService.makeSpending(
-                amount: amount,
+        // For a split option, divide the amount across all listed budgets
+        // and round to the nearest integer (sign preserved). One ledger
+        // entry per emoji, all sharing description + timestamp.
+        let perAmount = Int((Double(amount) / Double(budgetEmojis.count)).rounded())
+        let now = Date()
+
+        for emoji in budgetEmojis {
+            let pending = PendingExpense(
+                amount: perAmount,
                 currency: currency,
-                budgetEmoji: budgetEmoji,
-                description: description,
-                datetime: nil  // Temporarily nil - backend not ready to accept datetime yet
+                budgetEmoji: emoji,
+                descriptionText: description,
+                datetime: now
             )
-
-            print("Spending added successfully: \(response.uuid)")
-
-            // Refresh data after adding
-            await loadLedger(for: nil)
-            await loadAmounts()
-            WidgetCenter.shared.reloadAllTimelines()
-        } catch let error as APIError {
-            errorMessage = "Failed to add spending: \(error.localizedDescription)"
-            print("API Error: \(errorMessage ?? "unknown")")
-        } catch {
-            errorMessage = "Failed to add spending: \(error.localizedDescription)"
-            print("Unknown error: \(error)")
+            PendingExpenseStore.shared.append(pending)
         }
+        rebuildDisplayed()
+        WidgetCenter.shared.reloadAllTimelines()
+
+        // Try to flush right away.
+        await drainPendingQueue()
+
+        // Pull fresh totals from the server (no-op when offline).
+        await loadAmounts()
     }
 
     func deleteSpending(uuid: String) async {
+        // Allow deleting a pending (not-yet-uploaded) entry by removing
+        // it from the local queue. UUIDs of pending entries are the
+        // PendingExpense.id; server UUIDs come from the backend.
+        if let pendingUUID = UUID(uuidString: uuid),
+           PendingExpenseStore.shared.all().contains(where: { $0.id == pendingUUID }) {
+            PendingExpenseStore.shared.remove(id: pendingUUID)
+            rebuildDisplayed()
+            WidgetCenter.shared.reloadAllTimelines()
+            return
+        }
+
         do {
             try await apiService.undoSpending(uuid: uuid)
-            // Refresh ledger after deletion
-            await loadLedger(for: nil)
+            await loadLedger(for: loadedMonth)
             await loadAmounts()
             WidgetCenter.shared.reloadAllTimelines()
         } catch {
             errorMessage = "Failed to delete spending: \(error.localizedDescription)"
+        }
+    }
+
+    func updateSpending(
+        entry: LedgerEntry,
+        amount: Int,
+        budgetEmoji: String,
+        description: String
+    ) async {
+        if let pendingUUID = UUID(uuidString: entry.uuid),
+           let pending = PendingExpenseStore.shared.all().first(where: { $0.id == pendingUUID }) {
+            PendingExpenseStore.shared.replace(PendingExpense(
+                id: pending.id,
+                amount: amount,
+                currency: pending.currency,
+                budgetEmoji: budgetEmoji,
+                descriptionText: description,
+                datetime: pending.datetime,
+                attemptCount: pending.attemptCount,
+                lastAttemptAt: pending.lastAttemptAt
+            ))
+            rebuildDisplayed()
+            WidgetCenter.shared.reloadAllTimelines()
+            await drainPendingQueue()
+            await loadAmounts()
+            return
+        }
+
+        do {
+            _ = try await apiService.updateSpending(
+                uuid: entry.uuid,
+                amount: amount,
+                budgetEmoji: budgetEmoji,
+                description: description
+            )
+            await loadLedger(for: loadedMonth)
+            await loadAmounts()
+            WidgetCenter.shared.reloadAllTimelines()
+        } catch {
+            errorMessage = "Failed to update spending: \(error.localizedDescription)"
         }
     }
 
@@ -287,5 +410,80 @@ class AppViewModel: ObservableObject {
             errorMessage = "Failed to export year: \(error.localizedDescription)"
             return nil
         }
+    }
+
+    // MARK: - Pending queue
+
+    private var isDraining = false
+
+    /// Attempt to upload every pending expense. On a network failure we
+    /// stop early — the next reachability / foreground event will retry.
+    /// Other errors (e.g. 4xx) are logged but the entry stays queued so
+    /// the user can manually remove it if it's genuinely bad.
+    func drainPendingQueue() async {
+        guard !isDraining else { return }
+        guard AuthenticationManager.shared.isAuthenticated else { return }
+
+        isDraining = true
+        defer { isDraining = false }
+
+        let items = PendingExpenseStore.shared.all()
+        guard !items.isEmpty else { return }
+
+        for item in items {
+            PendingExpenseStore.shared.markAttempt(id: item.id)
+            do {
+                _ = try await apiService.makeSpending(
+                    amount: item.amount,
+                    currency: item.currency,
+                    budgetEmoji: item.budgetEmoji,
+                    description: item.descriptionText,
+                    datetime: item.datetime
+                )
+                PendingExpenseStore.shared.remove(id: item.id)
+            } catch {
+                if isNetworkError(error) {
+                    // Offline / connection dropped — stop trying, wait for
+                    // reachability to come back.
+                    break
+                }
+                // Server-side error: keep the entry, log it, move on.
+                print("drainPendingQueue: non-network error for \(item.id): \(error)")
+            }
+        }
+        rebuildDisplayed()
+    }
+
+    // MARK: - Display merging
+
+    private func rebuildDisplayed() {
+        let pending = PendingExpenseStore.shared.all()
+
+        // Adjust each budget's year-to-date total by pending amounts so
+        // the Amount page is optimistic. /amounts is year-scoped, so any
+        // pending in the current year contributes.
+        let currentYear = Calendar.current.component(.year, from: Date())
+        var pendingAdjustments: [String: Int] = [:]
+        for p in pending where Calendar.current.component(.year, from: p.datetime) == currentYear {
+            pendingAdjustments[p.budgetEmoji, default: 0] += p.amount
+        }
+        budgets = serverBudgets.map { b in
+            guard let adj = pendingAdjustments[b.emoji] else { return b }
+            var copy = b
+            copy.totalAmount = (b.totalAmount ?? 0) + adj
+            return copy
+        }
+
+        // Inject pending entries into the ledger as display-only rows,
+        // but only those that belong to the currently-loaded month so
+        // looking at past months doesn't surface today's pending entry.
+        let calendar = Calendar.current
+        let monthForFilter = loadedMonth ?? Date()
+        let pendingInMonth = pending.filter { p in
+            calendar.isDate(p.datetime, equalTo: monthForFilter, toGranularity: .month) &&
+            calendar.isDate(p.datetime, equalTo: monthForFilter, toGranularity: .year)
+        }
+        let pendingEntries = pendingInMonth.map { LedgerEntry(pending: $0) }
+        ledgerEntries = serverLedgerEntries + pendingEntries
     }
 }

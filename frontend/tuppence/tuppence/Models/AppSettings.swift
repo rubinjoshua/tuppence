@@ -27,6 +27,19 @@ class AppSettings: ObservableObject {
         }
     }
 
+    // List of multi-emoji strings (e.g. "🛒🦊"). Each becomes a row at the
+    // bottom of the budget picker; choosing one divides the amount across
+    // the constituent budgets. Persisted in the App Group so the Shortcuts
+    // extension reads the same list as the main app.
+    @Published var splitBudgetOptions: [String] = [] {
+        didSet {
+            guard !isLoading, splitBudgetOptions != oldValue else { return }
+            if let data = try? JSONEncoder().encode(splitBudgetOptions) {
+                defaults.set(data, forKey: "split_budget_options")
+            }
+        }
+    }
+
     let backendURL = "https://tuppence-production-8de5.up.railway.app"
 
     private init() {
@@ -48,6 +61,12 @@ class AppSettings: ObservableObject {
     func loadFromSettings() {
         isLoading = true
         currencySymbol = defaults.string(forKey: "currency_symbol") ?? "$"
+        if let data = defaults.data(forKey: "split_budget_options"),
+           let options = try? JSONDecoder().decode([String].self, from: data) {
+            splitBudgetOptions = options
+        } else {
+            splitBudgetOptions = []
+        }
         isLoading = false
     }
 

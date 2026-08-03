@@ -8,11 +8,13 @@ import SwiftUI
 struct AddExpenseSheet: View {
     @Binding var isPresented: Bool
     let budgets: [Budget]
-    let onAddExpense: (Int, String, String) async -> Void
+    let splitOptions: [String]
+    let editingEntry: LedgerEntry?
+    let onSave: (Int, [String], String) async -> Void
 
     @State private var step: Step = .amount
     @State private var amountText: String = ""
-    @State private var isPositive: Bool = false
+    @State private var transactionTypeIndex: Int = 0
     @State private var description: String = ""
     @State private var showConfirmation: Bool = false
     @State private var isLogging: Bool = false
@@ -20,6 +22,16 @@ struct AddExpenseSheet: View {
 
     @Environment(\.colorScheme) var colorScheme
     @ObservedObject private var settings = AppSettings.shared
+
+    /// Filter to options whose constituent emojis all map to current budgets.
+    /// Stale options (referencing a deleted budget) are hidden from the picker.
+    private var validSplitOptions: [String] {
+        splitOptions.filter { option in
+            let tokens = option.emojiTokens
+            guard tokens.count >= 2 else { return false }
+            return tokens.allSatisfy { token in budgets.contains(where: { $0.emoji == token }) }
+        }
+    }
 
     private enum Step {
         case amount
@@ -31,6 +43,10 @@ struct AddExpenseSheet: View {
         case amount
         case description
     }
+
+    // Scrollable "(expense)" / "(income)" toggle. Index 0 = expense (default).
+    private let transactionTypeOptions: [String] = ["(expense)", "(income)"]
+    private var isPositive: Bool { transactionTypeIndex == 1 }
 
     var body: some View {
         ZStack {
@@ -68,13 +84,27 @@ struct AddExpenseSheet: View {
 
     private var amountStep: some View {
         VStack(spacing: 16) {
-            Text("Amount")
-                .themedText(size: 15)
-                .opacity(0.7)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // Centered title; ">" non-button sits on the right inside the box
+            // to mirror the "<" chevron in the description/budget steps.
+            ZStack {
+                Text("Amount")
+                    .themedText(size: 15)
+                    .opacity(0.7)
+                HStack {
+                    Spacer()
+                    nextChevron(enabled: isAmountValid) {
+                        advanceFromAmount()
+                    }
+                }
+            }
 
             HStack(spacing: 12) {
-                signToggle
+                ScrollableText(
+                    options: transactionTypeOptions,
+                    selectedIndex: $transactionTypeIndex,
+                    fontSize: 20
+                )
+                .fixedSize()
 
                 HStack(spacing: 4) {
                     Text(settings.currencySymbol)
@@ -87,13 +117,6 @@ struct AddExpenseSheet: View {
                         .multilineTextAlignment(.leading)
                         .onChange(of: amountText) { _, v in
                             amountText = v.filter { $0.isNumber }
-                        }
-                        .toolbar {
-                            ToolbarItemGroup(placement: .keyboard) {
-                                Spacer()
-                                Button("Next") { advanceFromAmount() }
-                                    .disabled(!isAmountValid)
-                            }
                         }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -108,40 +131,22 @@ struct AddExpenseSheet: View {
         }
     }
 
-    private var signToggle: some View {
-        HStack(spacing: 0) {
-            signPill("−", isOn: !isPositive) { isPositive = false }
-            signPill("+", isOn: isPositive) { isPositive = true }
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-        )
-    }
-
-    private func signPill(_ symbol: String, isOn: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(symbol)
-                .themedText(size: 20)
-                .frame(width: 36, height: 36)
-                .background(isOn ? Color.white.opacity(0.25) : Color.clear)
-                .cornerRadius(8)
-        }
-        .buttonStyle(.plain)
-    }
-
     // MARK: - Step 2: Description
 
     private var descriptionStep: some View {
         VStack(spacing: 12) {
-            HStack {
-                backChevron { goBack(to: .amount) }
+            // Centered title with "<" on the left and ">" on the right.
+            ZStack {
                 Text("Description")
                     .themedText(size: 15)
                     .opacity(0.7)
-                Spacer()
+                HStack {
+                    backChevron { goBack(to: .amount) }
+                    Spacer()
+                    nextChevron(enabled: isDescriptionValid) {
+                        advanceFromDescription()
+                    }
+                }
             }
 
             TextField("description", text: $description)
@@ -150,6 +155,13 @@ struct AddExpenseSheet: View {
                 .focused($focusedField, equals: .description)
                 .submitLabel(.next)
                 .onSubmit(advanceFromDescription)
+                .toolbar {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("Next") { advanceFromDescription() }
+                            .disabled(!isDescriptionValid)
+                    }
+                }
         }
         .padding(20)
         .background(card)
@@ -164,12 +176,14 @@ struct AddExpenseSheet: View {
 
     private var budgetStep: some View {
         VStack(spacing: 0) {
-            HStack {
-                backChevron { goBack(to: .description) }
+            ZStack {
                 Text("Budget")
                     .themedText(size: 15)
                     .opacity(0.7)
-                Spacer()
+                HStack {
+                    backChevron { goBack(to: .description) }
+                    Spacer()
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
@@ -177,13 +191,17 @@ struct AddExpenseSheet: View {
 
             VStack(spacing: 6) {
                 ForEach(budgets) { budget in
-                    Button(action: { pickBudget(budget) }) {
+                    Button(action: { pickBudget(emojis: [budget.emoji]) }) {
                         HStack(spacing: 12) {
                             Text(budget.emoji)
                                 .font(.system(size: 22 * Theme.Layout.emojiScale))
                             Text(budget.label)
                                 .themedText(size: 17)
                             Spacer()
+                            if editingEntry?.budgetEmoji == budget.emoji {
+                                Image(systemName: "checkmark")
+                                    .foregroundColor(Theme.textColor(for: colorScheme))
+                            }
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
@@ -191,6 +209,26 @@ struct AddExpenseSheet: View {
                         .contentShape(Rectangle())
                     }
                     .disabled(isLogging)
+                }
+
+                if editingEntry == nil {
+                    ForEach(validSplitOptions, id: \.self) { option in
+                        let tokens = option.emojiTokens
+                        Button(action: { pickBudget(emojis: tokens) }) {
+                            HStack(spacing: 12) {
+                                Text(option)
+                                    .font(.system(size: 22 * Theme.Layout.emojiScale))
+                                Text(splitLabel(for: tokens))
+                                    .themedText(size: 17)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Color.white.opacity(0.001))
+                            .contentShape(Rectangle())
+                        }
+                        .disabled(isLogging)
+                    }
                 }
             }
             .padding(.bottom, 12)
@@ -201,7 +239,7 @@ struct AddExpenseSheet: View {
         }
     }
 
-    // MARK: - Back chevron
+    // MARK: - Chevrons
 
     private func backChevron(action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -213,6 +251,21 @@ struct AddExpenseSheet: View {
         }
     }
 
+    // Visually mirrors backChevron's "<" — a non-button glyph so it doesn't
+    // look like a tappable affordance, but tap is wired up via a clear
+    // overlay so users can also advance by tapping it.
+    private func nextChevron(enabled: Bool, action: @escaping () -> Void) -> some View {
+        Image(systemName: "chevron.right")
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundColor(Theme.textColor(for: colorScheme))
+            .opacity(enabled ? 1.0 : 0.3)
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if enabled { action() }
+            }
+    }
+
     // MARK: - Confirmation overlay
 
     private var addedConfirmation: some View {
@@ -220,7 +273,7 @@ struct AddExpenseSheet: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 56, weight: .semibold))
                 .foregroundColor(Theme.textColor(for: colorScheme))
-            Text("Added")
+            Text(editingEntry == nil ? "Added" : "Updated")
                 .themedText(size: 17)
         }
         .padding(.horizontal, 40)
@@ -259,11 +312,15 @@ struct AddExpenseSheet: View {
         return false
     }
 
+    private var isDescriptionValid: Bool {
+        !description.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     private func resetState() {
         step = .amount
-        amountText = ""
-        isPositive = false
-        description = ""
+        amountText = editingEntry.map { String(abs($0.amount)) } ?? ""
+        transactionTypeIndex = editingEntry.map { $0.amount >= 0 ? 1 : 0 } ?? 0
+        description = editingEntry?.descriptionText ?? ""
         showConfirmation = false
         isLogging = false
     }
@@ -298,16 +355,17 @@ struct AddExpenseSheet: View {
         }
     }
 
-    private func pickBudget(_ budget: Budget) {
+    private func pickBudget(emojis: [String]) {
         guard let amount = Int(amountText), amount > 0,
               !description.trimmingCharacters(in: .whitespaces).isEmpty,
+              !emojis.isEmpty,
               !isLogging else { return }
 
         isLogging = true
         let finalAmount = isPositive ? amount : -amount
 
         Task {
-            await onAddExpense(finalAmount, budget.emoji, description)
+            await onSave(finalAmount, emojis, description)
             await MainActor.run {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     showConfirmation = true
@@ -319,6 +377,12 @@ struct AddExpenseSheet: View {
             }
         }
     }
+
+    private func splitLabel(for tokens: [String]) -> String {
+        tokens.map { token in
+            budgets.first(where: { $0.emoji == token })?.label ?? token
+        }.joined(separator: " / ")
+    }
 }
 
 // MARK: - Sheet Presentation
@@ -326,7 +390,9 @@ struct AddExpenseSheet: View {
 struct AddExpenseSheetModifier: ViewModifier {
     @Binding var isPresented: Bool
     let budgets: [Budget]
-    let onAddExpense: (Int, String, String) async -> Void
+    let splitOptions: [String]
+    let editingEntry: LedgerEntry?
+    let onSave: (Int, [String], String) async -> Void
 
     func body(content: Content) -> some View {
         ZStack {
@@ -336,7 +402,9 @@ struct AddExpenseSheetModifier: ViewModifier {
                 AddExpenseSheet(
                     isPresented: $isPresented,
                     budgets: budgets,
-                    onAddExpense: onAddExpense
+                    splitOptions: splitOptions,
+                    editingEntry: editingEntry,
+                    onSave: onSave
                 )
                 .transition(.opacity)
                 .zIndex(999)
@@ -350,12 +418,16 @@ extension View {
     func addExpenseSheet(
         isPresented: Binding<Bool>,
         budgets: [Budget],
-        onAddExpense: @escaping (Int, String, String) async -> Void
+        splitOptions: [String],
+        editingEntry: LedgerEntry? = nil,
+        onSave: @escaping (Int, [String], String) async -> Void
     ) -> some View {
         modifier(AddExpenseSheetModifier(
             isPresented: isPresented,
             budgets: budgets,
-            onAddExpense: onAddExpense
+            splitOptions: splitOptions,
+            editingEntry: editingEntry,
+            onSave: onSave
         ))
     }
 }
