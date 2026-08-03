@@ -14,6 +14,7 @@ from app.models.settings import Settings as SettingsModel
 from app.schemas.ledger import (
     MakeSpendingRequest,
     MakeSpendingResponse,
+    UpdateSpendingRequest,
     LedgerEntryResponse,
     UndoSpendingResponse,
 )
@@ -181,6 +182,33 @@ def undo_spending(
         success=True,
         message="Spending entry deleted successfully",
     )
+
+
+@router.put("/spending/{entry_uuid}", response_model=LedgerEntryResponse)
+async def update_spending(
+    entry_uuid: UUID,
+    request: UpdateSpendingRequest,
+    user_household: Tuple[User, Household] = Depends(get_current_user_and_household),
+    db: Session = Depends(get_db),
+):
+    """Edit a household ledger entry without changing its original timestamp."""
+    _, household = user_household
+    entry = db.query(LedgerEntry).filter(
+        LedgerEntry.uuid == entry_uuid,
+        LedgerEntry.household_id == household.id,
+    ).first()
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Ledger entry not found")
+
+    if request.description_text != entry.description_text:
+        entry.category = await get_or_create_category(request.description_text, db)
+
+    entry.amount = request.amount
+    entry.budget_emoji = request.budget_emoji
+    entry.description_text = request.description_text
+    db.commit()
+    db.refresh(entry)
+    return entry
 
 
 # ============================================================================

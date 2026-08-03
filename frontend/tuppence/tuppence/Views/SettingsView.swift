@@ -35,6 +35,11 @@ struct SettingsView: View {
     @State private var showAddBudget = false
     @State private var editingBudget: Budget?
 
+    // Split-budget options
+    @State private var showAddSplitOption = false
+    @State private var editingSplitOption: SplitOptionIdentifier?
+    @State private var splitOptionError: String?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -54,6 +59,13 @@ struct SettingsView: View {
 
                 // Budget Management Section
                 budgetManagementSection
+
+                Divider()
+                    .background(Theme.textColor(for: colorScheme).opacity(0.3))
+                    .padding(.horizontal, -Theme.Layout.screenPadding)
+
+                // Split-Budget Options Section
+                splitBudgetOptionsSection
 
                 Divider()
                     .background(Theme.textColor(for: colorScheme).opacity(0.3))
@@ -576,6 +588,143 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Split-Budget Options Section
+
+    @ViewBuilder
+    private var splitBudgetOptionsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Split-Budget Options")
+                    .themedHeading(size: 20)
+                Spacer()
+                if authManager.isAuthenticated {
+                    Button(action: {
+                        editingSplitOption = nil
+                        showAddSplitOption = true
+                    }) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundColor(Theme.headingColor(for: colorScheme))
+                    }
+                }
+            }
+
+            if !authManager.isAuthenticated {
+                Text("Sign in to configure split options")
+                    .themedText(size: 14)
+                    .opacity(0.6)
+            } else if settings.splitBudgetOptions.isEmpty {
+                Text("No split options yet. Tap + to add one (e.g. 🛒🦊 to split between two budgets).")
+                    .themedText(size: 14)
+                    .opacity(0.6)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                VStack(spacing: 12) {
+                    ForEach(Array(settings.splitBudgetOptions.enumerated()), id: \.offset) { index, option in
+                        SplitOptionRow(
+                            emojiString: option,
+                            label: splitOptionLabel(option),
+                            isStale: !splitOptionIsValid(option),
+                            canMoveUp: index > 0,
+                            canMoveDown: index < settings.splitBudgetOptions.count - 1,
+                            onMoveUp: { moveSplitOption(from: index, to: index - 1) },
+                            onMoveDown: { moveSplitOption(from: index, to: index + 1) },
+                            onEdit: {
+                                editingSplitOption = SplitOptionIdentifier(index: index, value: option)
+                            },
+                            onDelete: {
+                                deleteSplitOption(at: index)
+                            }
+                        )
+                    }
+                }
+
+                Text("Picking a split option in Add Expense divides the amount evenly across the listed budgets.")
+                    .themedText(size: 12)
+                    .opacity(0.6)
+                    .padding(.top, 4)
+            }
+
+            if let error = splitOptionError {
+                Text(error)
+                    .themedText(size: 13)
+                    .foregroundColor(Theme.Colors.deleteRed)
+            }
+        }
+        .sheet(isPresented: $showAddSplitOption) {
+            SplitOptionEditView(
+                initial: nil,
+                budgets: budgets,
+                existing: settings.splitBudgetOptions,
+                onSave: { saveSplitOption(newValue: $0, replacingIndex: nil) }
+            )
+        }
+        .sheet(item: $editingSplitOption) { ident in
+            SplitOptionEditView(
+                initial: ident.value,
+                budgets: budgets,
+                existing: settings.splitBudgetOptions,
+                onSave: { saveSplitOption(newValue: $0, replacingIndex: ident.index) }
+            )
+        }
+    }
+
+    private func splitOptionLabel(_ option: String) -> String {
+        let parts = option.emojiTokens.map { token -> String in
+            budgets.first(where: { $0.emoji == token })?.label ?? "??"
+        }
+        return parts.joined(separator: " / ")
+    }
+
+    private func splitOptionIsValid(_ option: String) -> Bool {
+        let tokens = option.emojiTokens
+        guard tokens.count >= 2 else { return false }
+        return tokens.allSatisfy { token in budgets.contains(where: { $0.emoji == token }) }
+    }
+
+    private func saveSplitOption(newValue: String, replacingIndex: Int?) {
+        var updated = settings.splitBudgetOptions
+        if let idx = replacingIndex {
+            updated[idx] = newValue
+        } else {
+            updated.append(newValue)
+        }
+        settings.splitBudgetOptions = updated
+        persistSplitOptions()
+    }
+
+    private func deleteSplitOption(at index: Int) {
+        guard settings.splitBudgetOptions.indices.contains(index) else { return }
+        settings.splitBudgetOptions.remove(at: index)
+        persistSplitOptions()
+    }
+
+    private func moveSplitOption(from source: Int, to destination: Int) {
+        var updated = settings.splitBudgetOptions
+        guard updated.indices.contains(source), destination >= 0, destination < updated.count else { return }
+        let value = updated.remove(at: source)
+        updated.insert(value, at: destination)
+        settings.splitBudgetOptions = updated
+        persistSplitOptions()
+    }
+
+    private func persistSplitOptions() {
+        let snapshot = settings.splitBudgetOptions
+        Task {
+            do {
+                try await APIService.shared.syncSettings(
+                    currencySymbol: settings.currencySymbol,
+                    splitBudgetOptions: snapshot
+                )
+                await MainActor.run { splitOptionError = nil }
+            } catch {
+                await MainActor.run {
+                    splitOptionError = "Failed to save split options: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     // MARK: - Export Section
 
     @ViewBuilder
@@ -856,6 +1005,234 @@ struct BudgetEditView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         onSave(emoji, label, monthlyAmount)
+                        dismiss()
+                    }
+                    .disabled(!isValid)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Split-Budget Option Support
+
+struct SplitOptionIdentifier: Identifiable {
+    let index: Int
+    let value: String
+    var id: String { "\(index)-\(value)" }
+}
+
+extension String {
+    /// Split this string into emoji grapheme clusters (`"🛒🦊🦩" → ["🛒", "🦊", "🦩"]`).
+    /// Whitespace + ASCII separators are dropped so paste of "🛒 / 🦊" still works.
+    var emojiTokens: [String] {
+        self.compactMap { ch in
+            // Drop whitespace + common separators users might paste between emojis.
+            if ch.isWhitespace || ch == "/" || ch == "," || ch == "-" || ch == "+" {
+                return nil
+            }
+            // Drop plain ASCII digits/letters; everything else (emoji,
+            // including ZWJ-joined sequences like 👨‍👩‍👧) is kept as one token.
+            if ch.isASCII { return nil }
+            return String(ch)
+        }
+    }
+}
+
+struct SplitOptionRow: View {
+    let emojiString: String
+    let label: String
+    let isStale: Bool
+    let canMoveUp: Bool
+    let canMoveDown: Bool
+    let onMoveUp: () -> Void
+    let onMoveDown: () -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    @Environment(\.colorScheme) var colorScheme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if isStale {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.yellow)
+                    .font(.system(size: 18))
+            }
+
+            Text(emojiString)
+                .font(.system(size: 28))
+                .opacity(isStale ? 0.5 : 1.0)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .themedText(size: 15)
+                    .opacity(isStale ? 0.5 : 1.0)
+                if isStale {
+                    Text("Missing budget — won't appear in pickers")
+                        .themedText(size: 11)
+                        .opacity(0.6)
+                }
+            }
+
+            Spacer()
+
+            VStack(spacing: 4) {
+                Button(action: onMoveUp) {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(Theme.headingColor(for: colorScheme))
+                        .frame(width: 32, height: 20)
+                        .background(Theme.headingColor(for: colorScheme).opacity(canMoveUp ? 0.1 : 0.04))
+                        .cornerRadius(6)
+                }
+                .disabled(!canMoveUp)
+                .opacity(canMoveUp ? 1 : 0.4)
+
+                Button(action: onMoveDown) {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(Theme.headingColor(for: colorScheme))
+                        .frame(width: 32, height: 20)
+                        .background(Theme.headingColor(for: colorScheme).opacity(canMoveDown ? 0.1 : 0.04))
+                        .cornerRadius(6)
+                }
+                .disabled(!canMoveDown)
+                .opacity(canMoveDown ? 1 : 0.4)
+            }
+
+            Button(action: onEdit) {
+                Image(systemName: "pencil")
+                    .foregroundColor(Theme.headingColor(for: colorScheme))
+                    .frame(width: 40, height: 40)
+                    .background(Theme.headingColor(for: colorScheme).opacity(0.1))
+                    .cornerRadius(8)
+            }
+
+            Button(action: onDelete) {
+                Image(systemName: "trash")
+                    .foregroundColor(Theme.Colors.deleteRed)
+                    .frame(width: 40, height: 40)
+                    .background(Theme.Colors.deleteRed.opacity(0.1))
+                    .cornerRadius(8)
+            }
+        }
+        .padding(.vertical, 8)
+    }
+}
+
+struct SplitOptionEditView: View {
+    let initial: String?
+    let budgets: [Budget]
+    let existing: [String]
+    let onSave: (String) -> Void
+
+    @Environment(\.dismiss) var dismiss
+    @Environment(\.colorScheme) var colorScheme
+
+    @State private var text: String
+
+    init(initial: String?, budgets: [Budget], existing: [String], onSave: @escaping (String) -> Void) {
+        self.initial = initial
+        self.budgets = budgets
+        self.existing = existing
+        self.onSave = onSave
+        _text = State(initialValue: initial ?? "")
+    }
+
+    private var tokens: [String] { text.emojiTokens }
+
+    private var duplicate: Bool {
+        let normalized = tokens.joined()
+        guard !normalized.isEmpty else { return false }
+        // If editing, the unchanged value isn't a duplicate of itself.
+        if let initial = initial, initial == normalized { return false }
+        return existing.contains(normalized)
+    }
+
+    private var unknownEmojis: [String] {
+        tokens.filter { token in !budgets.contains(where: { $0.emoji == token }) }
+    }
+
+    private var hasDuplicateEmoji: Bool {
+        Set(tokens).count != tokens.count
+    }
+
+    private var validationError: String? {
+        if tokens.isEmpty {
+            return "Enter at least two budget emojis (e.g. 🛒🦊)."
+        }
+        if tokens.count < 2 {
+            return "Add at least two emojis to split between."
+        }
+        if hasDuplicateEmoji {
+            return "Each budget can only appear once."
+        }
+        if !unknownEmojis.isEmpty {
+            return "Unknown budget(s): \(unknownEmojis.joined(separator: " "))."
+        }
+        if duplicate {
+            return "This split option already exists."
+        }
+        return nil
+    }
+
+    private var isValid: Bool { validationError == nil }
+
+    var body: some View {
+        NavigationView {
+            ZStack {
+                Theme.backgroundColor(for: colorScheme).ignoresSafeArea()
+
+                VStack(spacing: 16) {
+                    Text("Enter the emojis of the budgets to split across (e.g. 🛒🦊 for groceries + Bob).")
+                        .themedText(size: 13)
+                        .opacity(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    TextField("🛒🦊", text: $text)
+                        .textFieldStyle(ThemedTextFieldStyle())
+                        .font(.system(size: 32))
+
+                    if !budgets.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Available budgets:")
+                                .themedText(size: 12)
+                                .opacity(0.6)
+                            HStack(spacing: 6) {
+                                ForEach(budgets) { b in
+                                    Text(b.emoji)
+                                        .font(.system(size: 22))
+                                        .onTapGesture {
+                                            text += b.emoji
+                                        }
+                                }
+                                Spacer()
+                            }
+                        }
+                    }
+
+                    if let error = validationError {
+                        Text(error)
+                            .themedText(size: 13)
+                            .foregroundColor(Theme.Colors.deleteRed)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer()
+                }
+                .padding(.horizontal, Theme.Layout.screenPadding)
+                .padding(.top, 20)
+            }
+            .navigationTitle(initial == nil ? "New Split Option" : "Edit Split Option")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave(tokens.joined())
                         dismiss()
                     }
                     .disabled(!isValid)

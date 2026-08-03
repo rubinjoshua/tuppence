@@ -27,6 +27,13 @@ class MakeSpendingResponse(BaseModel):
     success: bool = True
 
 
+class UpdateSpendingRequest(BaseModel):
+    """Editable fields for an existing ledger entry."""
+    amount: int
+    budget_emoji: str = Field(max_length=10)
+    description_text: str
+
+
 class LedgerEntryResponse(BaseModel):
     """Schema for ledger entry in list responses"""
     uuid: UUID

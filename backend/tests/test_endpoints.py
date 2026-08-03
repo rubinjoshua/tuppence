@@ -1,5 +1,8 @@
 """Core endpoint tests - auth-gated and household-scoped."""
 
+import asyncio
+from types import SimpleNamespace
+
 import pytest
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
@@ -80,6 +83,7 @@ class TestAuthGating:
         ("get", "/ledger"),
         ("get", "/category_map?budget_emoji=🛒"),
         ("post", "/make_spending"),
+        ("put", "/spending/00000000-0000-0000-0000-000000000000"),
         ("delete", "/undo_spending/00000000-0000-0000-0000-000000000000"),
         ("post", "/sync_settings"),
         ("get", "/settings"),
@@ -88,7 +92,10 @@ class TestAuthGating:
         ("post", "/archive_year?year=2026"),
     ])
     def test_unauthenticated_rejected(self, client, method, path):
-        response = getattr(client, method)(path) if method != "post" else client.post(path, json={})
+        if method in {"post", "put"}:
+            response = getattr(client, method)(path, json={})
+        else:
+            response = getattr(client, method)(path)
         assert response.status_code == 401
 
 
@@ -189,6 +196,81 @@ class TestUndoSpending:
         response = client.delete(
             "/undo_spending/00000000-0000-0000-0000-000000000000",
             headers=alice["headers"],
+        )
+        assert response.status_code == 404
+
+
+class TestUpdateSpending:
+    def test_updates_fields_but_preserves_identity_and_date(
+        self, client, db, alice, monkeypatch, mock_categorizer
+    ):
+        original_datetime = datetime(2026, 7, 12, 9, 30, tzinfo=timezone.utc)
+        created = client.post(
+            "/make_spending",
+            json={
+                "amount": -10,
+                "currency": "EUR",
+                "budget_emoji": "🛒",
+                "description_text": "milk",
+                "datetime": original_datetime.isoformat(),
+            },
+            headers=alice["headers"],
+        ).json()
+        stored_datetime = db.query(LedgerEntry).filter_by(
+            uuid=UUID(created["uuid"])
+        ).one().datetime
+
+        async def categorize_edit(text, db):
+            return "Baby"
+
+        from app.api import routes
+        monkeypatch.setattr(routes, "get_or_create_category", categorize_edit)
+
+        response = client.put(
+            f"/spending/{created['uuid']}",
+            json={
+                "amount": 25,
+                "budget_emoji": "🦊",
+                "description_text": "Dilly supplies",
+            },
+            headers=alice["headers"],
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["uuid"] == created["uuid"]
+        assert data["amount"] == 25
+        assert data["budget_emoji"] == "🦊"
+        assert data["description_text"] == "Dilly supplies"
+        assert data["category"] == "Baby"
+
+        entry = db.query(LedgerEntry).filter_by(uuid=UUID(created["uuid"])).one()
+        assert entry.datetime == stored_datetime
+        assert entry.year == 2026
+        assert entry.currency == "EUR"
+
+    def test_cannot_update_other_household_entry(
+        self, client, alice, bob, mock_categorizer
+    ):
+        created = client.post(
+            "/make_spending",
+            json={
+                "amount": -10,
+                "currency": "EUR",
+                "budget_emoji": "🛒",
+                "description_text": "milk",
+            },
+            headers=alice["headers"],
+        ).json()
+
+        response = client.put(
+            f"/spending/{created['uuid']}",
+            json={
+                "amount": -20,
+                "budget_emoji": "🦊",
+                "description_text": "changed",
+            },
+            headers=bob["headers"],
         )
         assert response.status_code == 404
 
@@ -400,3 +482,60 @@ class TestCategoryMap:
 
         descriptions = {e["description"] for e in category["entries"]}
         assert descriptions == {"milk", "bread"}
+
+
+def test_categorization_prompt_includes_external_rules(monkeypatch):
+    from app.services import categorization_service
+
+    captured = {}
+
+    class FakeCompletions:
+        def parse(self, **kwargs):
+            captured.update(kwargs)
+            parsed = SimpleNamespace(category="Baby")
+            message = SimpleNamespace(parsed=parsed)
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    fake_client = SimpleNamespace(
+        beta=SimpleNamespace(
+            chat=SimpleNamespace(completions=FakeCompletions())
+        )
+    )
+    monkeypatch.setattr(
+        categorization_service,
+        "OpenAI",
+        lambda api_key: fake_client,
+    )
+
+    result = asyncio.run(categorization_service.categorize_with_openai("Dileyla snacks"))
+
+    assert result == "Baby"
+    system_prompt = captured["messages"][0]["content"]
+    assert categorization_service.CATEGORIZATION_RULES in system_prompt
+    assert "Dileyla" in system_prompt
+    assert "snacks" in system_prompt
+
+
+def test_rules_version_bypasses_legacy_category_cache(db, monkeypatch):
+    from app.models.text_category_cache import TextCategoryCache
+    from app.services import categorization_service
+
+    db.add(TextCategoryCache(
+        cleaned_text="dileyla snacks",
+        category_name="Groceries",
+    ))
+    db.commit()
+
+    async def categorize(text):
+        return "Baby"
+
+    monkeypatch.setattr(categorization_service, "categorize_with_openai", categorize)
+
+    result = asyncio.run(
+        categorization_service.get_or_create_category("Dileyla snacks", db)
+    )
+
+    assert result == "Baby"
+    assert db.query(TextCategoryCache).filter_by(
+        cleaned_text=f"dileyla snacks|rules:{categorization_service.RULES_VERSION}"
+    ).one().category_name == "Baby"

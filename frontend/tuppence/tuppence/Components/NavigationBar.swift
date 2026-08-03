@@ -7,8 +7,8 @@ import SwiftUI
 
 enum Page: String, CaseIterable {
     case amount = "Amount"
-    case analysis = "Analysis"
     case spendings = "Spendings"
+    case analysis = "Analysis"
     case settings = "Settings"
 }
 
@@ -128,10 +128,12 @@ struct NavigationBar: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Analysis: "[Analysis] of [this month]'s [emoji] spendings"
+    // MARK: - Analysis: "[Analysis] of [month name]'s [emoji] spendings"
+    // Months are ordered oldest-first so the current month sits at the
+    // bottom of the scrollable picker (and can't be scrolled past).
     @ViewBuilder
     private func analysisHeading(fontSize: CGFloat) -> some View {
-        let monthNames = ["this month"] + months.dropLast().map { $0.monthName }
+        let monthNames = months.map { $0.monthName }
 
         VStack(spacing: 4) {
             // Line 1: "Analysis of this month's"
@@ -202,10 +204,10 @@ struct NavigationBar: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Spendings: "[Spendings] made [this month]"
+    // MARK: - Spendings: "[Spendings] made [month name]"
     @ViewBuilder
     private func spendingsHeading(fontSize: CGFloat) -> some View {
-        let monthNames = ["this month"] + months.dropLast().map { $0.monthName }
+        let monthNames = months.map { $0.monthName }
 
         VStack(spacing: 4) {
             // Line 1: "Spendings made"

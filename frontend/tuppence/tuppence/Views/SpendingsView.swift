@@ -7,10 +7,12 @@ import SwiftUI
 
 struct SpendingsView: View {
     let entries: [LedgerEntry]
+    let budgets: [Budget]
     let onDelete: (String) async -> Void
+    let onEdit: (LedgerEntry) -> Void
     let onRefresh: () async -> Void
 
-    @State private var isRefreshing = false
+    @State private var expandedDates: Set<Date> = []
     @Environment(\.colorScheme) var colorScheme
 
     // Group entries by date
@@ -27,37 +29,74 @@ struct SpendingsView: View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(groupedEntries, id: \.date) { group in
-                    // Date heading
-                    Text(formatDate(group.date))
-                        .font(Theme.Fonts.body(size: 17))
-                        .foregroundColor(Theme.shadowColor(for: colorScheme))
-                        .opacity(0.6)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.top, group.date == groupedEntries.first?.date ? 20 : 32)
-                        .padding(.bottom, 12)
-
-                    // Entries for this date (sorted oldest to newest)
-                    ForEach(group.entries.sorted(by: { $0.datetime < $1.datetime })) { entry in
-                        SpendingRow(
-                            entry: entry,
-                            onDelete: {
-                                Task {
-                                    await onDelete(entry.uuid)
-                                }
-                            }
-                        )
-                        .padding(.horizontal, Theme.Layout.screenPadding)
-                        .padding(.vertical, 8)
-                    }
+                    dayGroup(group: group)
                 }
             }
             .padding(.bottom, 260)  // Headroom so last row can scroll above the fade region.
         }
+        // Anchor the initial scroll position at the bottom (today) every time
+        // the view is recreated. Using `defaultScrollAnchor` instead of a manual
+        // `ScrollViewReader.scrollTo` in `.onAppear` avoids the race where the
+        // LazyVStack hasn't laid out its child IDs yet and the scroll silently
+        // no-ops.
+        .defaultScrollAnchor(.bottom)
         .refreshable {
             await onRefresh()
         }
         .padding(.top, 64)  // Clear floating add button.
         .fadingBottom()
+        .onDisappear {
+            // Collapse everything when leaving the page so re-entry starts clean.
+            expandedDates.removeAll()
+        }
+    }
+
+    @ViewBuilder
+    private func dayGroup(group: (date: Date, entries: [LedgerEntry])) -> some View {
+        let isFirst = group.date == groupedEntries.first?.date
+        let topPadding: CGFloat = isFirst ? 20 : 32
+
+        // Date heading — tappable to expand/collapse that day's spending
+        // summary. Appearance is unchanged so the affordance is
+        // "hidden in plain sight".
+        Text(formatDate(group.date))
+            .font(Theme.Fonts.body(size: 17))
+            .foregroundColor(Theme.shadowColor(for: colorScheme))
+            .opacity(0.6)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.top, topPadding)
+            .padding(.bottom, 12)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if expandedDates.contains(group.date) {
+                        expandedDates.remove(group.date)
+                    } else {
+                        expandedDates.insert(group.date)
+                    }
+                }
+            }
+
+        if expandedDates.contains(group.date) {
+            dailySummary(for: group.date)
+                .transition(.opacity)
+        }
+
+        ForEach(group.entries.sorted(by: { $0.datetime < $1.datetime })) { entry in
+            SpendingRow(
+                entry: entry,
+                onEdit: {
+                    onEdit(entry)
+                },
+                onDelete: {
+                    Task {
+                        await onDelete(entry.uuid)
+                    }
+                }
+            )
+            .padding(.horizontal, Theme.Layout.screenPadding)
+            .padding(.vertical, 8)
+        }
     }
 
     // Format date as "6/3/2026" or "today"
@@ -73,36 +112,105 @@ struct SpendingsView: View {
 
         return "\(day)/\(month)/\(year)"
     }
+
+    // Spending is derived directly from the ledger. Income and monthly
+    // budget additions are positive entries, so they don't count as spent.
+    private func spendingTotals(on date: Date) -> [(emoji: String, amount: Int)] {
+        let calendar = Calendar.current
+        var totals: [String: Int] = budgets.reduce(into: [:]) { result, budget in
+            result[budget.emoji] = 0
+        }
+        for entry in entries where entry.amount < 0 && calendar.isDate(entry.datetime, inSameDayAs: date) {
+            totals[entry.budgetEmoji, default: 0] += abs(entry.amount)
+        }
+        return budgets.map { (emoji: $0.emoji, amount: totals[$0.emoji] ?? 0) }
+    }
+
+    @ViewBuilder
+    private func dailySummary(for date: Date) -> some View {
+        let currencySymbol = AppSettings.shared.currencySymbol
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Spent on this day")
+                .themedText(size: 12)
+                .opacity(0.6)
+                .padding(.horizontal, 16)
+
+            VStack(spacing: 10) {
+                ForEach(spendingTotals(on: date), id: \.emoji) { row in
+                    HStack(spacing: 12) {
+                        Text(row.emoji)
+                            .font(.system(size: 18 * Theme.Layout.emojiScale))
+                        Text("\(currencySymbol)\(row.amount)")
+                            .themedText(size: 18)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+        }
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.white.opacity(0.10), lineWidth: 0.5)
+                )
+        )
+        // The fold-down has no taps, edits, or buttons — turning hit testing
+        // off lets vertical drags reach the ScrollView so the user can swipe
+        // over the summary to scroll the list (matching the rest of the page).
+        .allowsHitTesting(false)
+        // Slightly narrower than the main list of spendings.
+        .padding(.horizontal, Theme.Layout.screenPadding + 20)
+        .padding(.bottom, 8)
+    }
 }
 
 struct SpendingRow: View {
     let entry: LedgerEntry
+    let onEdit: () -> Void
     let onDelete: () -> Void
 
     @State private var offset: CGFloat = 0
-    @State private var showingDeleteButton = false
-    @GestureState private var isDragging = false
+    @State private var revealedAction: RevealedAction?
     @Environment(\.colorScheme) var colorScheme
 
-    private let deleteThreshold: CGFloat = -80
-    private let deleteButtonWidth: CGFloat = 60
+    private enum RevealedAction: Equatable {
+        case edit
+        case delete
+    }
+
+    private let buttonWidth: CGFloat = 60
+    private let revealThreshold: CGFloat = 30
 
     var body: some View {
-        ZStack(alignment: .trailing) {
-            // Delete button background
-            if showingDeleteButton || offset < 0 {
+        ZStack {
+            if revealedAction == .edit || offset > 0 {
+                HStack {
+                    Image(systemName: "pencil")
+                        .foregroundColor(.white)
+                        .frame(width: buttonWidth)
+                        .frame(maxHeight: .infinity)
+                        .background(Color.accentColor)
+                        .onTapGesture {
+                            closeAction()
+                            onEdit()
+                        }
+                    Spacer()
+                }
+            }
+
+            if revealedAction == .delete || offset < 0 {
                 HStack {
                     Spacer()
                     Image(systemName: "trash.fill")
                         .foregroundColor(.white)
-                        .frame(width: deleteButtonWidth)
+                        .frame(width: buttonWidth)
                         .frame(maxHeight: .infinity)
                         .background(Theme.Colors.deleteRed)
                         .onTapGesture {
-                            withAnimation {
-                                offset = 0
-                                showingDeleteButton = false
-                            }
+                            closeAction()
                             onDelete()
                         }
                 }
@@ -124,8 +232,16 @@ struct SpendingRow: View {
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
+                if entry.isPending {
+                    // Small arrow-up-cloud while we wait for the upload.
+                    Image(systemName: "arrow.up.to.line")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(Theme.textColor(for: colorScheme).opacity(0.5))
+                }
+
                 Text(formattedAmount)
                     .themedText(size: 17)
+                    .opacity(entry.isPending ? 0.7 : 1.0)
             }
             .padding(.vertical, 12)
             .background(Theme.backgroundColor(for: colorScheme))
@@ -135,41 +251,40 @@ struct SpendingRow: View {
             // activate this gesture.
             .gesture(
                 DragGesture(minimumDistance: 20)
-                    .updating($isDragging) { _, state, _ in
-                        state = true
-                    }
                     .onChanged { value in
                         guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                        if value.translation.width < 0 {
-                            offset = max(value.translation.width, -deleteButtonWidth * 1.5)
-                        }
+                        offset = min(max(value.translation.width, -buttonWidth * 1.5), buttonWidth * 1.5)
                     }
                     .onEnded { value in
-                        // Swipe never deletes — it only reveals the button.
-                        // Delete requires an explicit tap on the trash icon.
-                        if value.translation.width < deleteThreshold / 2 {
-                            withAnimation(.spring()) {
-                                offset = -deleteButtonWidth
-                                showingDeleteButton = true
-                            }
+                        if value.translation.width > revealThreshold {
+                            reveal(.edit)
+                        } else if value.translation.width < -revealThreshold {
+                            reveal(.delete)
                         } else {
-                            withAnimation(.spring()) {
-                                offset = 0
-                                showingDeleteButton = false
-                            }
+                            closeAction()
                         }
                     }
             )
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            // Tap anywhere to close delete button
-            if showingDeleteButton {
-                withAnimation(.spring()) {
-                    offset = 0
-                    showingDeleteButton = false
-                }
+            if revealedAction != nil {
+                closeAction()
             }
+        }
+    }
+
+    private func reveal(_ action: RevealedAction) {
+        withAnimation(.spring()) {
+            revealedAction = action
+            offset = action == .edit ? buttonWidth : -buttonWidth
+        }
+    }
+
+    private func closeAction() {
+        withAnimation(.spring()) {
+            offset = 0
+            revealedAction = nil
         }
     }
 

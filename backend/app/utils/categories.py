@@ -1,4 +1,4 @@
-"""150 predefined spending categories"""
+"""Predefined spending categories"""
 
 PREDEFINED_CATEGORIES = [
     "Groceries",
@@ -129,6 +129,7 @@ PREDEFINED_CATEGORIES = [
     "Moving Expenses",
     "Furniture Rental",
     "Home Security",
+    "Baby",
     "Baby Care",
     "Baby Food",
     "Diapers",

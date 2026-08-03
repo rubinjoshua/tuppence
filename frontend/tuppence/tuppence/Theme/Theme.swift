@@ -157,4 +157,22 @@ extension View {
             }
         )
     }
+
+    /// Mirror of `fadingBottom` for the top of a scrollable view. Used when
+    /// a sticky element (e.g. the Analysis pie chart) sits above the scroll
+    /// region — content should fade out before it slides behind that element.
+    func fadingTop(clearHeight: CGFloat = 0, gradientHeight: CGFloat = 30) -> some View {
+        mask(
+            VStack(spacing: 0) {
+                Color.clear.frame(height: clearHeight)
+                LinearGradient(
+                    colors: [.clear, .black],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: gradientHeight)
+                Rectangle().fill(.black)
+            }
+        )
+    }
 }

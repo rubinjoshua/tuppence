@@ -1,5 +1,8 @@
 """AI categorization service with caching"""
 
+from hashlib import sha256
+from pathlib import Path
+
 from sqlalchemy.orm import Session
 from openai import OpenAI
 from pydantic import BaseModel
@@ -8,6 +11,12 @@ from app.config import settings
 from app.models.text_category_cache import TextCategoryCache
 from app.utils.text_cleaning import clean_text
 from app.utils.categories import PREDEFINED_CATEGORIES
+
+
+CATEGORIZATION_RULES = (
+    Path(__file__).resolve().parents[2] / "categorization_rules.md"
+).read_text(encoding="utf-8").strip()
+RULES_VERSION = sha256(CATEGORIZATION_RULES.encode()).hexdigest()[:12]
 
 
 class CategoryResponse(BaseModel):
@@ -47,8 +56,10 @@ async def get_or_create_category(text: str, db: Session) -> str:
     if not cleaned:
         return "Miscellaneous"
 
-    # Check cache first
-    cached = db.query(TextCategoryCache).filter_by(cleaned_text=cleaned).first()
+    # A rules-file change gets a new cache namespace so stale classifications
+    # cannot override rules added later. Keep within the column's 500-char max.
+    cache_key = f"{cleaned[:480]}|rules:{RULES_VERSION}"
+    cached = db.query(TextCategoryCache).filter_by(cleaned_text=cache_key).first()
     if cached:
         return cached.category_name
 
@@ -57,7 +68,7 @@ async def get_or_create_category(text: str, db: Session) -> str:
 
     # Cache the result
     cache_entry = TextCategoryCache(
-        cleaned_text=cleaned,
+        cleaned_text=cache_key,
         category_name=category
     )
     db.add(cache_entry)
@@ -92,7 +103,12 @@ async def categorize_with_openai(text: str) -> str:
             messages=[
                 {
                     "role": "system",
-                    "content": f"You are a spending categorization assistant. Categorize the user's spending into exactly one of these categories: {categories_str}. Choose the most appropriate category. If unsure, choose 'Miscellaneous'."
+                    "content": (
+                        "You are a spending categorization assistant. Categorize the user's "
+                        f"spending into exactly one of these categories: {categories_str}. "
+                        "Choose the most appropriate category. If unsure, choose 'Miscellaneous'.\n\n"
+                        f"Additional categorization rules:\n{CATEGORIZATION_RULES}"
+                    )
                 },
                 {
                     "role": "user",

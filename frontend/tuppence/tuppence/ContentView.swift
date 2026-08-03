@@ -13,8 +13,11 @@ struct ContentView: View {
     @State private var currentPage: Page = .amount
     @State private var amountDisplay: AmountDisplay = .total
     @State private var selectedBudgetIndex = 0
-    @State private var selectedMonthIndex = 0
+    // Default to current month (last entry in months[]). Updated in .onAppear
+    // so it stays correct as we roll into a new month mid-session.
+    @State private var selectedMonthIndex: Int = max(0, Calendar.current.component(.month, from: Date()) - 1)
     @State private var isShowingAddExpense = false
+    @State private var editingEntry: LedgerEntry?
 
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.scenePhase) var scenePhase
@@ -23,8 +26,10 @@ struct ContentView: View {
         Date.monthsInCurrentYear()
     }
 
+    // Always a real Date (current month at the end of the array). Backend
+    // accepts the explicit "YYYY-MM" string for any month.
     private var selectedMonth: Date? {
-        selectedMonthIndex == 0 ? nil : months[safe: selectedMonthIndex]
+        months[safe: selectedMonthIndex] ?? months.last
     }
 
     private var selectedBudget: Budget? {
@@ -92,10 +97,36 @@ struct ContentView: View {
         .addExpenseSheet(
             isPresented: $isShowingAddExpense,
             budgets: viewModel.budgets,
-            onAddExpense: { amount, emoji, description in
-                await viewModel.addSpending(amount: amount, budgetEmoji: emoji, description: description)
+            splitOptions: settings.splitBudgetOptions,
+            editingEntry: editingEntry,
+            onSave: { amount, emojis, description in
+                if let entry = editingEntry, let emoji = emojis.first {
+                    await viewModel.updateSpending(
+                        entry: entry,
+                        amount: amount,
+                        budgetEmoji: emoji,
+                        description: description
+                    )
+                } else {
+                    await viewModel.addSpending(
+                        amount: amount,
+                        budgetEmojis: emojis,
+                        description: description
+                    )
+                }
+                // Refresh whatever the user is currently looking at so the
+                // changed ledger state shows up immediately.
+                await viewModel.loadLedger(for: selectedMonth)
+                if currentPage == .analysis, let budget = selectedBudget {
+                    await viewModel.loadCategoryMap(for: selectedMonth, budgetEmoji: budget.emoji)
+                }
             }
         )
+        .onChange(of: isShowingAddExpense) { _, isShowing in
+            if !isShowing {
+                editingEntry = nil
+            }
+        }
         .task {
             await viewModel.syncAndLoad()
         }
@@ -151,8 +182,13 @@ struct ContentView: View {
         case .spendings:
             SpendingsView(
                 entries: viewModel.ledgerEntries,
+                budgets: viewModel.budgets,
                 onDelete: { uuid in
                     await viewModel.deleteSpending(uuid: uuid)
+                },
+                onEdit: { entry in
+                    editingEntry = entry
+                    isShowingAddExpense = true
                 },
                 onRefresh: {
                     // Run in parallel: chaining `await loadLedger; await loadAmounts`

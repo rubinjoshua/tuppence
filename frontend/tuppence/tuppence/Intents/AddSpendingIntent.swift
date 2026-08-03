@@ -12,6 +12,11 @@ struct AddSpendingIntent: AppIntent {
     static var title: LocalizedStringResource = "Add Spending"
     static var description = IntentDescription("Log a spending or income entry to your budget")
 
+    // Lock-screen execution: don't force unlock for expense logging.
+    static var authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
+    static var openAppWhenRun: Bool = false
+    static var isDiscoverable: Bool = true
+
     @Parameter(title: "Budget")
     var budget: BudgetEntity
 
@@ -38,24 +43,15 @@ struct AddSpendingIntent: AppIntent {
             finalAmount = abs(amount)
         }
 
-        do {
-            _ = try await APIService.shared.makeSpending(
-                amount: finalAmount,
-                currency: currencyCode,
-                budgetEmoji: budget.emoji,
-                description: description,
-                datetime: Date()
-            )
-
-            await MainActor.run {
-                WidgetCenter.shared.reloadAllTimelines()
-            }
-
-            let dialogText = "Added \(transactionType.rawValue) of \(currencySymbol)\(amount) to \(budget.emoji) \(budget.label)"
-            return .result(dialog: IntentDialog(stringLiteral: dialogText))
-        } catch {
-            throw IntentError.message("Failed to add spending: \(error.localizedDescription)")
-        }
+        let dialogText = await logSpending(
+            amount: finalAmount,
+            currency: currencyCode,
+            currencySymbol: currencySymbol,
+            target: budget,
+            description: description,
+            transactionLabel: transactionType.rawValue
+        )
+        return .result(dialog: IntentDialog(stringLiteral: dialogText))
     }
 
     enum TransactionType: String, AppEnum {
@@ -76,6 +72,11 @@ struct QuickAddSpendingIntent: AppIntent {
     static var description = IntentDescription(
         "Log a spending. Supply an Amount and a comma-separated list of common Descriptions. The user picks one at run time; 'Something else' is appended automatically as a free-text fallback."
     )
+
+    // Lock-screen execution: don't force unlock for expense logging.
+    static var authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
+    static var openAppWhenRun: Bool = false
+    static var isDiscoverable: Bool = true
 
     @Parameter(title: "Amount")
     var amount: Int
@@ -138,24 +139,90 @@ struct QuickAddSpendingIntent: AppIntent {
             )
         }
 
+        let dialogText = await logSpending(
+            amount: -abs(amount),
+            currency: currencyCode,
+            currencySymbol: currencySymbol,
+            target: resolvedBudget,
+            description: finalDescription,
+            transactionLabel: nil
+        )
+        return .result(dialog: IntentDialog(stringLiteral: dialogText))
+    }
+}
+
+// MARK: - Shared Intent Helper
+
+/// Enqueue the expense locally, then try to upload it. On network failure
+/// the entry stays in the queue and the main app will retry on next launch
+/// or when the device comes back online. The returned dialog text reflects
+/// which path was taken so the user knows whether it was uploaded or queued.
+///
+/// When `target` is a split option (its `splitEmojis` non-nil and non-empty),
+/// the amount is divided evenly across the listed budgets and one ledger
+/// entry is created per budget.
+@available(iOS 18.0, *)
+private func logSpending(
+    amount: Int,
+    currency: String,
+    currencySymbol: String,
+    target: BudgetEntity,
+    description: String,
+    transactionLabel: String?
+) async -> String {
+    let emojis: [String]
+    if let split = target.splitEmojis, !split.isEmpty {
+        emojis = split
+    } else {
+        emojis = [target.emoji]
+    }
+    let perAmount = Int((Double(amount) / Double(emojis.count)).rounded())
+    let now = Date()
+
+    var pendingIds: [(id: UUID, emoji: String)] = []
+    for emoji in emojis {
+        let pending = PendingExpense(
+            amount: perAmount,
+            currency: currency,
+            budgetEmoji: emoji,
+            descriptionText: description,
+            datetime: now
+        )
+        PendingExpenseStore.shared.append(pending)
+        pendingIds.append((id: pending.id, emoji: emoji))
+    }
+
+    var uploadedCount = 0
+    for entry in pendingIds {
         do {
             _ = try await APIService.shared.makeSpending(
-                amount: -abs(amount),
-                currency: currencyCode,
-                budgetEmoji: resolvedBudget.emoji,
-                description: finalDescription,
-                datetime: Date()
+                amount: perAmount,
+                currency: currency,
+                budgetEmoji: entry.emoji,
+                description: description,
+                datetime: now
             )
-
-            await MainActor.run {
-                WidgetCenter.shared.reloadAllTimelines()
-            }
-
-            let dialogText = "Added \(currencySymbol)\(amount) — \(finalDescription) — to \(resolvedBudget.emoji) \(resolvedBudget.label)"
-            return .result(dialog: IntentDialog(stringLiteral: dialogText))
+            PendingExpenseStore.shared.remove(id: entry.id)
+            uploadedCount += 1
         } catch {
-            throw IntentError.message("Failed to add spending: \(error.localizedDescription)")
+            // Best-effort — entry stays in the queue and the main app
+            // will retry on launch / when the device is online.
         }
+    }
+
+    await MainActor.run {
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    let amountText = "\(currencySymbol)\(abs(amount))"
+    let typePrefix = transactionLabel.map { "\($0) of " } ?? ""
+    let allUploaded = uploadedCount == pendingIds.count
+    let targetText = target.label.isEmpty ? target.emoji : "\(target.emoji) \(target.label)"
+
+    if allUploaded {
+        return "Added \(typePrefix)\(amountText) — \(description) — to \(targetText)"
+    } else {
+        return "Queued \(typePrefix)\(amountText) — \(description) — to \(targetText) (will upload when online)"
     }
 }
 
@@ -168,6 +235,16 @@ struct BudgetEntity: AppEntity {
     var id: String { emoji }
     let emoji: String
     let label: String
+    /// When non-nil, this entity represents a "split" option — the amount is
+    /// divided evenly across these emojis at log time. Plain budgets leave
+    /// this nil.
+    let splitEmojis: [String]?
+
+    init(emoji: String, label: String, splitEmojis: [String]? = nil) {
+        self.emoji = emoji
+        self.label = label
+        self.splitEmojis = splitEmojis
+    }
 
     var displayRepresentation: DisplayRepresentation {
         DisplayRepresentation(title: "\(emoji) \(label)")
@@ -183,9 +260,13 @@ struct BudgetQuery: EntityQuery {
     // the user's pick. Returning [] here causes iOS 18 to loop the picker.
     func entities(for identifiers: [String]) async throws -> [BudgetEntity] {
         let budgets = (try? await APIService.shared.listBudgets()) ?? []
+        let splitMap = Self.validSplitEntities(budgets: budgets)
         return identifiers.map { id in
             if let b = budgets.first(where: { $0.emoji == id }) {
                 return BudgetEntity(emoji: b.emoji, label: b.label)
+            }
+            if let split = splitMap[id] {
+                return split
             }
             return BudgetEntity(emoji: id, label: id)
         }
@@ -193,7 +274,36 @@ struct BudgetQuery: EntityQuery {
 
     func suggestedEntities() async throws -> [BudgetEntity] {
         let budgets = try await APIService.shared.listBudgets()
-        return budgets.map { BudgetEntity(emoji: $0.emoji, label: $0.label) }
+        let splitMap = Self.validSplitEntities(budgets: budgets)
+        let splitEntities = splitMap.values.sorted { $0.emoji < $1.emoji }
+        return budgets.map { BudgetEntity(emoji: $0.emoji, label: $0.label) } + splitEntities
+    }
+
+    /// Build `BudgetEntity` rows for every split option whose emojis all
+    /// map to a current budget. Keyed by the concatenated emoji string so
+    /// `entities(for:)` can resolve a picked split by its id.
+    private static func validSplitEntities(budgets: [Budget]) -> [String: BudgetEntity] {
+        let options = AppSettings.shared.splitBudgetOptions
+        let emojiToLabel: [String: String] = Dictionary(
+            uniqueKeysWithValues: budgets.map { ($0.emoji, $0.label) }
+        )
+
+        var result: [String: BudgetEntity] = [:]
+        for option in options {
+            let tokens = Self.emojiTokens(in: option)
+            guard tokens.count >= 2, tokens.allSatisfy({ emojiToLabel[$0] != nil }) else { continue }
+            let label = tokens.map { emojiToLabel[$0] ?? $0 }.joined(separator: " / ")
+            result[option] = BudgetEntity(emoji: option, label: label, splitEmojis: tokens)
+        }
+        return result
+    }
+
+    private static func emojiTokens(in s: String) -> [String] {
+        s.compactMap { ch in
+            if ch.isWhitespace || ch == "/" || ch == "," || ch == "-" || ch == "+" { return nil }
+            if ch.isASCII { return nil }
+            return String(ch)
+        }
     }
 }
 
