@@ -168,6 +168,9 @@ class AppViewModel: ObservableObject {
                 if remote.splitBudgetOptions != settings.splitBudgetOptions {
                     settings.splitBudgetOptions = remote.splitBudgetOptions
                 }
+                if remote.categorizationRules != settings.categorizationRules {
+                    settings.categorizationRules = remote.categorizationRules
+                }
             }
         } catch {
             print("Failed to fetch settings: \(error)")

@@ -12,6 +12,10 @@ class SyncSettingsRequest(BaseModel):
         default=None,
         description="Optional list of multi-emoji split-budget options. Omit to leave unchanged.",
     )
+    categorization_rules: Optional[str] = Field(
+        default=None,
+        description="Optional free-text categorization rules. Omit to leave unchanged.",
+    )
 
 
 class SyncSettingsResponse(BaseModel):
@@ -23,6 +27,7 @@ class GetSettingsResponse(BaseModel):
     """Response schema for fetching the household's current settings."""
     currency_symbol: str
     split_budget_options: List[str] = []
+    categorization_rules: str
 
 
 class CheckAutomationsResponse(BaseModel):

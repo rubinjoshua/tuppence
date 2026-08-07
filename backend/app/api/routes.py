@@ -32,7 +32,11 @@ from app.schemas.settings import (
 )
 import json
 from app.dependencies.auth import get_current_user_and_household
-from app.services.categorization_service import get_or_create_category
+from app.services.categorization_service import (
+    get_or_create_category,
+    get_household_rules,
+    DEFAULT_CATEGORIZATION_RULES,
+)
 from app.services.ledger_service import (
     get_amounts_for_current_year,
     get_ledger_for_month,
@@ -140,7 +144,8 @@ async def make_spending(
     """Log a new spending with AI categorization, scoped to the household."""
     _, household = user_household
 
-    category = await get_or_create_category(request.description_text or "", db)
+    rules = get_household_rules(db, household.id)
+    category = await get_or_create_category(request.description_text or "", db, rules)
 
     dt = request.spent_at or datetime.now(timezone.utc)
 
@@ -201,7 +206,8 @@ async def update_spending(
         raise HTTPException(status_code=404, detail="Ledger entry not found")
 
     if request.description_text != entry.description_text:
-        entry.category = await get_or_create_category(request.description_text, db)
+        rules = get_household_rules(db, household.id)
+        entry.category = await get_or_create_category(request.description_text, db, rules)
 
     entry.amount = request.amount
     entry.budget_emoji = request.budget_emoji
@@ -223,8 +229,9 @@ def sync_settings_endpoint(
 ):
     """Upsert per-household settings.
 
-    `split_budget_options` is optional — omit to leave the existing value
-    untouched. Pass an empty list to explicitly clear it.
+    `split_budget_options` and `categorization_rules` are optional — omit either
+    to leave the existing value untouched. Pass an empty list / empty string to
+    explicitly clear them.
     """
     _, household = user_household
 
@@ -234,11 +241,14 @@ def sync_settings_endpoint(
         settings.currency_symbol = request.currency_symbol
         if request.split_budget_options is not None:
             settings.split_budget_options = json.dumps(request.split_budget_options)
+        if request.categorization_rules is not None:
+            settings.categorization_rules = request.categorization_rules
     else:
         db.add(SettingsModel(
             household_id=household.id,
             currency_symbol=request.currency_symbol,
             split_budget_options=json.dumps(request.split_budget_options or []),
+            categorization_rules=request.categorization_rules,
         ))
 
     db.commit()
@@ -256,7 +266,11 @@ def get_settings_endpoint(
     settings = db.query(SettingsModel).filter_by(household_id=household.id).first()
 
     if settings is None:
-        return GetSettingsResponse(currency_symbol="$", split_budget_options=[])
+        return GetSettingsResponse(
+            currency_symbol="$",
+            split_budget_options=[],
+            categorization_rules=DEFAULT_CATEGORIZATION_RULES,
+        )
 
     try:
         split_options = json.loads(settings.split_budget_options or "[]")
@@ -268,6 +282,11 @@ def get_settings_endpoint(
     return GetSettingsResponse(
         currency_symbol=settings.currency_symbol,
         split_budget_options=[str(s) for s in split_options],
+        categorization_rules=(
+            settings.categorization_rules
+            if settings.categorization_rules is not None
+            else DEFAULT_CATEGORIZATION_RULES
+        ),
     )
 
 

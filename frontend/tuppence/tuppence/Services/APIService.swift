@@ -169,8 +169,16 @@ class APIService {
 
     // MARK: - Configuration
 
-    func syncSettings(currencySymbol: String, splitBudgetOptions: [String]? = nil) async throws {
-        let request = SyncSettingsRequest(currencySymbol: currencySymbol, splitBudgetOptions: splitBudgetOptions)
+    func syncSettings(
+        currencySymbol: String,
+        splitBudgetOptions: [String]? = nil,
+        categorizationRules: String? = nil
+    ) async throws {
+        let request = SyncSettingsRequest(
+            currencySymbol: currencySymbol,
+            splitBudgetOptions: splitBudgetOptions,
+            categorizationRules: categorizationRules
+        )
         let _: SuccessResponse = try await post(endpoint: "/sync_settings", body: request)
     }
 
@@ -466,20 +474,24 @@ private struct ReorderBudgetsResponse: Codable {
 private struct SyncSettingsRequest: Codable {
     let currencySymbol: String
     let splitBudgetOptions: [String]?
+    let categorizationRules: String?
 
     enum CodingKeys: String, CodingKey {
         case currencySymbol = "currency_symbol"
         case splitBudgetOptions = "split_budget_options"
+        case categorizationRules = "categorization_rules"
     }
 }
 
 struct SettingsResponse: Codable {
     let currencySymbol: String
     let splitBudgetOptions: [String]
+    let categorizationRules: String
 
     enum CodingKeys: String, CodingKey {
         case currencySymbol = "currency_symbol"
         case splitBudgetOptions = "split_budget_options"
+        case categorizationRules = "categorization_rules"
     }
 }
 

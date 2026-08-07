@@ -40,6 +40,17 @@ class AppSettings: ObservableObject {
         }
     }
 
+    // Free-text rules appended to the AI categorization prompt on the backend.
+    // Household-scoped and shared across members; the widget/Shortcuts
+    // extensions never categorize locally so this lives only in the main app's
+    // defaults for offline display in Settings.
+    @Published var categorizationRules: String = "" {
+        didSet {
+            guard !isLoading, categorizationRules != oldValue else { return }
+            defaults.set(categorizationRules, forKey: "categorization_rules")
+        }
+    }
+
     let backendURL = "https://tuppence-production-8de5.up.railway.app"
 
     private init() {
@@ -67,6 +78,7 @@ class AppSettings: ObservableObject {
         } else {
             splitBudgetOptions = []
         }
+        categorizationRules = defaults.string(forKey: "categorization_rules") ?? ""
         isLoading = false
     }
 

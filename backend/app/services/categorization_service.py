@@ -1,22 +1,46 @@
 """AI categorization service with caching"""
 
 from hashlib import sha256
-from pathlib import Path
 
 from sqlalchemy.orm import Session
 from openai import OpenAI
 from pydantic import BaseModel
 
 from app.config import settings
+from app.models.settings import Settings as SettingsModel
 from app.models.text_category_cache import TextCategoryCache
 from app.utils.text_cleaning import clean_text
 from app.utils.categories import PREDEFINED_CATEGORIES
 
 
-CATEGORIZATION_RULES = (
-    Path(__file__).resolve().parents[2] / "categorization_rules.md"
-).read_text(encoding="utf-8").strip()
-RULES_VERSION = sha256(CATEGORIZATION_RULES.encode()).hexdigest()[:12]
+# Seed rules used when a household hasn't customised its own. Households edit
+# these from the app's Settings screen; the edited text is stored per-household
+# and shared with all members (see `get_household_rules`).
+DEFAULT_CATEGORIZATION_RULES = (
+    "# Spending categorization rules\n"
+    "\n"
+    "- Categorize anything mentioning \"baby\" or the child's name \"Dileyla\", "
+    "\"Dilly\", or \"Dily\" as `Baby`.\n"
+    "- Do not categorize snacks as `Groceries`."
+)
+
+
+def get_household_rules(db: Session, household_id) -> str:
+    """Return the categorization rules text in effect for a household.
+
+    Falls back to DEFAULT_CATEGORIZATION_RULES when the household has no
+    settings row yet or hasn't overridden the rules.
+    """
+    settings_row = db.query(SettingsModel).filter_by(household_id=household_id).first()
+    if settings_row and settings_row.categorization_rules is not None:
+        return settings_row.categorization_rules
+    return DEFAULT_CATEGORIZATION_RULES
+
+
+def _rules_version(rules: str) -> str:
+    """Short content hash of the rules, used to namespace the cache so a
+    rules change can't return classifications made under older rules."""
+    return sha256(rules.encode()).hexdigest()[:12]
 
 
 class CategoryResponse(BaseModel):
@@ -24,7 +48,7 @@ class CategoryResponse(BaseModel):
     category: str
 
 
-async def get_or_create_category(text: str, db: Session) -> str:
+async def get_or_create_category(text: str, db: Session, rules: str) -> str:
     """
     Get category for spending text, using cache or OpenAI API.
 
@@ -39,6 +63,8 @@ async def get_or_create_category(text: str, db: Session) -> str:
     Args:
         text: Raw spending description text from user
         db: Database session
+        rules: Household's categorization rules text (fetched via
+            get_household_rules)
 
     Returns:
         Category name (one of PREDEFINED_CATEGORIES)
@@ -56,15 +82,15 @@ async def get_or_create_category(text: str, db: Session) -> str:
     if not cleaned:
         return "Miscellaneous"
 
-    # A rules-file change gets a new cache namespace so stale classifications
+    # A rules change gets a new cache namespace so stale classifications
     # cannot override rules added later. Keep within the column's 500-char max.
-    cache_key = f"{cleaned[:480]}|rules:{RULES_VERSION}"
+    cache_key = f"{cleaned[:480]}|rules:{_rules_version(rules)}"
     cached = db.query(TextCategoryCache).filter_by(cleaned_text=cache_key).first()
     if cached:
         return cached.category_name
 
     # Cache miss - call OpenAI API
-    category = await categorize_with_openai(text)
+    category = await categorize_with_openai(text, rules)
 
     # Cache the result
     cache_entry = TextCategoryCache(
@@ -77,7 +103,7 @@ async def get_or_create_category(text: str, db: Session) -> str:
     return category
 
 
-async def categorize_with_openai(text: str) -> str:
+async def categorize_with_openai(text: str, rules: str) -> str:
     """
     Categorize spending text using OpenAI gpt-4o-mini.
 
@@ -85,6 +111,7 @@ async def categorize_with_openai(text: str) -> str:
 
     Args:
         text: Raw spending description text
+        rules: Household's categorization rules text injected into the prompt
 
     Returns:
         Category name from PREDEFINED_CATEGORIES
@@ -107,7 +134,7 @@ async def categorize_with_openai(text: str) -> str:
                         "You are a spending categorization assistant. Categorize the user's "
                         f"spending into exactly one of these categories: {categories_str}. "
                         "Choose the most appropriate category. If unsure, choose 'Miscellaneous'.\n\n"
-                        f"Additional categorization rules:\n{CATEGORIZATION_RULES}"
+                        f"Additional categorization rules:\n{rules}"
                     )
                 },
                 {

@@ -40,6 +40,11 @@ struct SettingsView: View {
     @State private var editingSplitOption: SplitOptionIdentifier?
     @State private var splitOptionError: String?
 
+    // Categorization rules
+    @State private var isSavingRules = false
+    @State private var rulesError: String?
+    @State private var rulesSaved = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -71,6 +76,13 @@ struct SettingsView: View {
                     .background(Theme.textColor(for: colorScheme).opacity(0.3))
                     .padding(.horizontal, -Theme.Layout.screenPadding)
 
+                // Categorization Rules Section
+                categorizationRulesSection
+
+                Divider()
+                    .background(Theme.textColor(for: colorScheme).opacity(0.3))
+                    .padding(.horizontal, -Theme.Layout.screenPadding)
+
                 // Export Section
                 exportSection
 
@@ -91,6 +103,7 @@ struct SettingsView: View {
             loadEmailFromSettings()
             Task {
                 await loadBudgets()
+                await loadCategorizationRulesIfNeeded()
             }
         }
     }
@@ -721,6 +734,108 @@ struct SettingsView: View {
                 await MainActor.run {
                     splitOptionError = "Failed to save split options: \(error.localizedDescription)"
                 }
+            }
+        }
+    }
+
+    // MARK: - Categorization Rules Section
+
+    @ViewBuilder
+    private var categorizationRulesSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Categorization Rules")
+                .themedHeading(size: 20)
+
+            if !authManager.isAuthenticated {
+                Text("Sign in to customize categorization rules")
+                    .themedText(size: 14)
+                    .opacity(0.6)
+            } else {
+                Text("These rules are added to the AI prompt that categorizes your spending. Edit them to tweak how descriptions get sorted into categories.")
+                    .themedText(size: 13)
+                    .opacity(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                TextEditor(text: $settings.categorizationRules)
+                    .themedText(size: 14)
+                    .frame(minHeight: 160)
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .background(Theme.textColor(for: colorScheme).opacity(0.05))
+                    .cornerRadius(8)
+                    .autocorrectionDisabled()
+
+                Button(action: {
+                    Task { await saveCategorizationRules() }
+                }) {
+                    HStack {
+                        if isSavingRules {
+                            ProgressView().tint(Theme.textColor(for: colorScheme))
+                        } else {
+                            Image(systemName: rulesSaved ? "checkmark" : "square.and.arrow.up")
+                            Text(rulesSaved ? "Saved" : "Save Rules")
+                        }
+                    }
+                    .themedText(size: 16)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Theme.headingColor(for: colorScheme).opacity(0.2))
+                    .cornerRadius(8)
+                }
+                .disabled(isSavingRules)
+
+                Text("Rules are shared across all household members.")
+                    .themedText(size: 12)
+                    .opacity(0.6)
+
+                if let error = rulesError {
+                    Text(error)
+                        .themedText(size: 13)
+                        .foregroundColor(Theme.Colors.deleteRed)
+                }
+            }
+        }
+    }
+
+    /// Populate the editor with the household's rules (the backend returns the
+    /// default seed when none has been set) so a first-time user sees editable
+    /// starting text rather than an empty box.
+    private func loadCategorizationRulesIfNeeded() async {
+        guard authManager.isAuthenticated,
+              settings.categorizationRules.isEmpty else { return }
+        do {
+            let remote = try await APIService.shared.getSettings()
+            await MainActor.run {
+                if settings.categorizationRules.isEmpty {
+                    settings.categorizationRules = remote.categorizationRules
+                }
+            }
+        } catch {
+            // Non-fatal: the editor stays empty and the user can still type.
+        }
+    }
+
+    private func saveCategorizationRules() async {
+        await MainActor.run {
+            isSavingRules = true
+            rulesError = nil
+            rulesSaved = false
+        }
+        do {
+            try await APIService.shared.syncSettings(
+                currencySymbol: settings.currencySymbol,
+                categorizationRules: settings.categorizationRules
+            )
+            await MainActor.run {
+                isSavingRules = false
+                rulesSaved = true
+            }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            await MainActor.run { rulesSaved = false }
+        } catch {
+            await MainActor.run {
+                isSavingRules = false
+                rulesError = "Failed to save rules: \(error.localizedDescription)"
             }
         }
     }

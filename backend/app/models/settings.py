@@ -19,6 +19,10 @@ class Settings(Base):
           to split a single spending across multiple budgets (e.g. "🛒🦊"
           splits between two budgets). Stored as text for SQLite/Postgres
           parity. Default "[]".
+        - categorization_rules: Free-text rules injected into the AI
+          categorization prompt. Edited from the app's Settings screen and
+          shared across all household members. NULL means "use the built-in
+          DEFAULT_CATEGORIZATION_RULES".
     """
 
     __tablename__ = "settings"
@@ -32,6 +36,7 @@ class Settings(Base):
     last_monthly_update_date = Column(Date, nullable=True)
     last_yearly_archive_date = Column(Date, nullable=True)
     split_budget_options = Column(Text, nullable=False, default="[]", server_default="[]")
+    categorization_rules = Column(Text, nullable=True)
 
     def __repr__(self):
         return f"<Settings(household={self.household_id}, currency={self.currency_symbol}, last_update={self.last_monthly_update_date})>"

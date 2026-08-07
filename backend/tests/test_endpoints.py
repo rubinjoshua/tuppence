@@ -55,7 +55,7 @@ def bob(client, db, alice):
 
 @pytest.fixture
 def mock_categorizer(monkeypatch):
-    async def mock_categorize(text, db):
+    async def mock_categorize(text, db, rules):
         return "Groceries"
 
     from app.api import routes
@@ -220,7 +220,7 @@ class TestUpdateSpending:
             uuid=UUID(created["uuid"])
         ).one().datetime
 
-        async def categorize_edit(text, db):
+        async def categorize_edit(text, db, rules):
             return "Baby"
 
         from app.api import routes
@@ -334,8 +334,14 @@ class TestSyncSettings:
         assert resp["split_budget_options"] == []
 
     def test_get_settings_defaults_when_no_row(self, client, alice):
+        from app.services.categorization_service import DEFAULT_CATEGORIZATION_RULES
+
         resp = client.get("/settings", headers=alice["headers"]).json()
-        assert resp == {"currency_symbol": "$", "split_budget_options": []}
+        assert resp == {
+            "currency_symbol": "$",
+            "split_budget_options": [],
+            "categorization_rules": DEFAULT_CATEGORIZATION_RULES,
+        }
 
 
 class TestCheckAutomations:
@@ -507,11 +513,14 @@ def test_categorization_prompt_includes_external_rules(monkeypatch):
         lambda api_key: fake_client,
     )
 
-    result = asyncio.run(categorization_service.categorize_with_openai("Dileyla snacks"))
+    result = asyncio.run(categorization_service.categorize_with_openai(
+        "Dileyla snacks",
+        categorization_service.DEFAULT_CATEGORIZATION_RULES,
+    ))
 
     assert result == "Baby"
     system_prompt = captured["messages"][0]["content"]
-    assert categorization_service.CATEGORIZATION_RULES in system_prompt
+    assert categorization_service.DEFAULT_CATEGORIZATION_RULES in system_prompt
     assert "Dileyla" in system_prompt
     assert "snacks" in system_prompt
 
@@ -526,16 +535,17 @@ def test_rules_version_bypasses_legacy_category_cache(db, monkeypatch):
     ))
     db.commit()
 
-    async def categorize(text):
+    async def categorize(text, rules):
         return "Baby"
 
     monkeypatch.setattr(categorization_service, "categorize_with_openai", categorize)
 
+    rules = categorization_service.DEFAULT_CATEGORIZATION_RULES
     result = asyncio.run(
-        categorization_service.get_or_create_category("Dileyla snacks", db)
+        categorization_service.get_or_create_category("Dileyla snacks", db, rules)
     )
 
     assert result == "Baby"
     assert db.query(TextCategoryCache).filter_by(
-        cleaned_text=f"dileyla snacks|rules:{categorization_service.RULES_VERSION}"
+        cleaned_text=f"dileyla snacks|rules:{categorization_service._rules_version(rules)}"
     ).one().category_name == "Baby"
