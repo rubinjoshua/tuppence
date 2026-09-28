@@ -8,7 +8,7 @@ import Foundation
 import WidgetKit
 
 @available(iOS 18.0, *)
-struct AddSpendingIntent: AppIntent {
+struct AddSpendingIntent: AppIntent, ForegroundContinuableIntent {
     static var title: LocalizedStringResource = "Add Spending"
     static var description = IntentDescription("Log a spending or income entry to your budget")
 
@@ -43,7 +43,7 @@ struct AddSpendingIntent: AppIntent {
             finalAmount = abs(amount)
         }
 
-        let dialogText = await logSpending(
+        let outcome = await logSpending(
             amount: finalAmount,
             currency: currencyCode,
             currencySymbol: currencySymbol,
@@ -51,6 +51,9 @@ struct AddSpendingIntent: AppIntent {
             description: description,
             transactionLabel: transactionType.rawValue
         )
+        guard case .logged(let dialogText) = outcome else {
+            throw signedOutError()
+        }
         return .result(dialog: IntentDialog(stringLiteral: dialogText))
     }
 
@@ -67,7 +70,7 @@ struct AddSpendingIntent: AppIntent {
 }
 
 @available(iOS 18.0, *)
-struct QuickAddSpendingIntent: AppIntent {
+struct QuickAddSpendingIntent: AppIntent, ForegroundContinuableIntent {
     static var title: LocalizedStringResource = "Log Expense"
     static var description = IntentDescription(
         "Log a spending. Supply an Amount and a comma-separated list of common Descriptions. The user picks one at run time; 'Something else' is appended automatically as a free-text fallback."
@@ -129,7 +132,14 @@ struct QuickAddSpendingIntent: AppIntent {
         if let configured = budget {
             resolvedBudget = configured
         } else {
-            let allBudgets = try await BudgetQuery().suggestedEntities()
+            let allBudgets: [BudgetEntity]
+            do {
+                allBudgets = try await BudgetQuery().suggestedEntities()
+            } catch APIError.sessionExpired {
+                // Signed out before we could even list the budgets.
+                await AuthenticationManager.shared.signOutExpiredSession()
+                throw signedOutError()
+            }
             guard !allBudgets.isEmpty else {
                 throw IntentError.message("No budgets available")
             }
@@ -139,7 +149,7 @@ struct QuickAddSpendingIntent: AppIntent {
             )
         }
 
-        let dialogText = await logSpending(
+        let outcome = await logSpending(
             amount: -abs(amount),
             currency: currencyCode,
             currencySymbol: currencySymbol,
@@ -147,8 +157,39 @@ struct QuickAddSpendingIntent: AppIntent {
             description: finalDescription,
             transactionLabel: nil
         )
+        guard case .logged(let dialogText) = outcome else {
+            throw signedOutError()
+        }
         return .result(dialog: IntentDialog(stringLiteral: dialogText))
     }
+}
+
+// MARK: - Signed-Out Handling
+
+/// Shortcuts has no login screen of its own, so a 401 mid-intent surfaces the
+/// same message the app shows plus the system's Continue button, which brings
+/// the app to the foreground. The session is already cleared by then, so the
+/// app comes up on the login screen.
+@available(iOS 18.0, *)
+extension ForegroundContinuableIntent {
+    nonisolated func signedOutError() -> Error {
+        needsToContinueInForegroundError(IntentDialog(
+            "Your session expired and you've been signed out. Continue to sign in again — anything logged here uploads automatically once you do."
+        )) { @MainActor in
+            // Covers the app relaunching cold from Continue, where nothing has
+            // set the login screen's message yet.
+            AuthenticationManager.shared.signOutExpiredSession()
+        }
+    }
+}
+
+/// What `logSpending` ended up doing, so callers can tell a real result from a
+/// dead session instead of reporting the misleading "queued, will upload when
+/// online" for both.
+@available(iOS 18.0, *)
+private enum LogOutcome {
+    case logged(String)
+    case sessionExpired
 }
 
 // MARK: - Shared Intent Helper
@@ -169,7 +210,7 @@ private func logSpending(
     target: BudgetEntity,
     description: String,
     transactionLabel: String?
-) async -> String {
+) async -> LogOutcome {
     let emojis: [String]
     if let split = target.splitEmojis, !split.isEmpty {
         emojis = split
@@ -204,6 +245,12 @@ private func logSpending(
             )
             PendingExpenseStore.shared.remove(id: entry.id)
             uploadedCount += 1
+        } catch APIError.sessionExpired {
+            // Every remaining upload would fail the same way. Clear the
+            // session so the app opens on the login screen, and leave the
+            // entries queued — ContentView drains them after sign-in.
+            await MainActor.run { AuthenticationManager.shared.signOutExpiredSession() }
+            return .sessionExpired
         } catch {
             // Best-effort — entry stays in the queue and the main app
             // will retry on launch / when the device is online.
@@ -220,9 +267,9 @@ private func logSpending(
     let targetText = target.label.isEmpty ? target.emoji : "\(target.emoji) \(target.label)"
 
     if allUploaded {
-        return "Added \(typePrefix)\(amountText) — \(description) — to \(targetText)"
+        return .logged("Added \(typePrefix)\(amountText) — \(description) — to \(targetText)")
     } else {
-        return "Queued \(typePrefix)\(amountText) — \(description) — to \(targetText) (will upload when online)"
+        return .logged("Queued \(typePrefix)\(amountText) — \(description) — to \(targetText) (will upload when online)")
     }
 }
 
