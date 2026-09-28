@@ -500,6 +500,76 @@ def test_session_sliding_window(client, db):
     db.refresh(session)
     assert session.last_activity > initial_time
 
+    # ...and that expires_at actually moved with it. Updating last_activity
+    # alone left expires_at pinned to creation + 30 days, which logged active
+    # users out every 30 days.
+    assert session.expires_at > initial_time + timedelta(days=30)
+
+
+def test_session_never_expires_while_in_use(client, db):
+    """An active user is never logged out: each request pushes expires_at out.
+
+    Regression for the 30-day forced logout — the session below is one day
+    from dying after 29 days of use, and using it must revive it.
+    """
+    from app.utils.auth import validate_session, SESSION_LIFETIME
+
+    user = User(email="active@example.com", password_hash=hash_password("Pass123"))
+    db.add(user)
+    db.flush()
+
+    household = Household(name="Active Household")
+    db.add(household)
+    db.flush()
+
+    db.add(HouseholdMember(household_id=household.id, user_id=user.id, role="owner"))
+
+    now = datetime.now()
+    created = now - timedelta(days=29)
+    session = Session(
+        user_id=user.id,
+        household_id=household.id,
+        created_at=created,
+        expires_at=created + SESSION_LIFETIME,  # expires tomorrow
+        last_activity=now
+    )
+    db.add(session)
+    db.commit()
+
+    assert validate_session(db, session.id) == (user.id, household.id)
+
+    db.refresh(session)
+    # Now good for another full lifetime, not one more day.
+    assert session.expires_at > now + SESSION_LIFETIME - timedelta(minutes=1)
+
+
+def test_expired_session_is_still_rejected(client, db):
+    """Sliding the window must not make abandoned sessions immortal."""
+    from app.utils.auth import validate_session
+
+    user = User(email="stale@example.com", password_hash=hash_password("Pass123"))
+    db.add(user)
+    db.flush()
+
+    household = Household(name="Stale Household")
+    db.add(household)
+    db.flush()
+
+    db.add(HouseholdMember(household_id=household.id, user_id=user.id, role="owner"))
+
+    long_ago = datetime.now() - timedelta(days=60)
+    session = Session(
+        user_id=user.id,
+        household_id=household.id,
+        created_at=long_ago,
+        expires_at=long_ago + timedelta(days=30),  # lapsed 30 days ago
+        last_activity=long_ago
+    )
+    db.add(session)
+    db.commit()
+
+    assert validate_session(db, session.id) is None
+
 
 def test_password_hashing_security(client, db):
     """Test that passwords are hashed with Argon2id"""

@@ -31,6 +31,25 @@ class AuthenticationManager: ObservableObject {
         keychain.upgradeAccessibilityIfNeeded(for: KeychainHelper.Keys.householdId)
         keychain.upgradeAccessibilityIfNeeded(for: KeychainHelper.Keys.householdName)
         checkAuthState()
+
+        NotificationCenter.default.addObserver(
+            forName: .sessionExpired,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor in self?.handleSessionExpired() }
+        }
+    }
+
+    // MARK: - Session Expiry
+
+    /// A 401 from any endpoint means the session is gone. Sign out once and let
+    /// ContentView swap in the login screen, rather than leaving the user in a
+    /// signed-in-looking app where every screen raises its own error.
+    private func handleSessionExpired() {
+        guard isAuthenticated else { return }
+        logout()
+        errorMessage = "Your session expired. Please sign in again."
     }
 
     // MARK: - Apple Sign In Helpers
@@ -223,7 +242,7 @@ class AuthenticationManager: ObservableObject {
     // MARK: - Logout
 
     func logout() {
-        keychain.deleteAll()
+        _ = keychain.deleteAll()
         isAuthenticated = false
         currentUser = nil
         errorMessage = nil

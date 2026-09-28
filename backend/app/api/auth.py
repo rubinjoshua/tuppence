@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session as DBSession
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import uuid
 
 from app.database import get_db
@@ -17,7 +17,7 @@ from app.schemas.auth import (
     AuthResponse,
     LogoutResponse,
 )
-from app.utils.auth import hash_password, verify_password
+from app.utils.auth import hash_password, verify_password, SESSION_LIFETIME
 from app.utils.apple_auth import extract_apple_user_info
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -32,7 +32,7 @@ def create_session(db: DBSession, user_id: uuid.UUID, household_id: uuid.UUID) -
     session = Session(
         user_id=user_id,
         household_id=household_id,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=30)
+        expires_at=datetime.now(timezone.utc) + SESSION_LIFETIME
     )
     db.add(session)
     db.flush()  # Get session.id

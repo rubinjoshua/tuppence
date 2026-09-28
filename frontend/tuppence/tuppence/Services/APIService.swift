@@ -5,6 +5,12 @@
 
 import Foundation
 
+extension Notification.Name {
+    /// Broadcast when the backend rejects our session token. AuthenticationManager
+    /// listens and drops the app to the login screen.
+    static let sessionExpired = Notification.Name("sessionExpired")
+}
+
 enum APIError: LocalizedError {
     case invalidURL
     case requestFailed(Error)
@@ -12,6 +18,7 @@ enum APIError: LocalizedError {
     case decodingFailed(Error)
     case httpError(Int, String)
     case notAuthenticated
+    case sessionExpired
 
     var errorDescription: String? {
         switch self {
@@ -28,6 +35,8 @@ enum APIError: LocalizedError {
             return "HTTP \(code): \(snippet)"
         case .notAuthenticated:
             return "Not signed in — open the Tuppence app and sign in before using this shortcut"
+        case .sessionExpired:
+            return "Your session expired. Please sign in again."
         }
     }
 }
@@ -77,6 +86,22 @@ class APIService {
         if let sessionToken = KeychainHelper.shared.get(KeychainHelper.Keys.sessionToken) {
             request.setValue("Bearer \(sessionToken)", forHTTPHeaderField: "Authorization")
         }
+    }
+
+    // MARK: - Response Validation
+
+    /// Turn a non-2xx response into the right error. A 401 means the session is
+    /// gone — expired or revoked — which is a sign-out, not a per-screen
+    /// failure, so it broadcasts once and every caller sees `.sessionExpired`.
+    private func validateStatus(_ response: HTTPURLResponse, data: Data) throws {
+        if (200...299).contains(response.statusCode) { return }
+
+        if response.statusCode == 401 {
+            NotificationCenter.default.post(name: .sessionExpired, object: nil)
+            throw APIError.sessionExpired
+        }
+
+        throw APIError.httpError(response.statusCode, String(data: data, encoding: .utf8) ?? "Unknown error")
     }
 
     // MARK: - Core Data Endpoints
@@ -211,7 +236,7 @@ class APIService {
 
     func generateHouseholdToken(expiresInDays: Int = 7) async throws -> String {
         guard let householdId = KeychainHelper.shared.get(KeychainHelper.Keys.householdId) else {
-            throw APIError.httpError(401, "Not signed in")
+            throw APIError.notAuthenticated
         }
         let body = GenerateSharingTokenRequest(expiresInDays: expiresInDays)
         let response: SharingTokenResponse = try await post(
@@ -243,9 +268,7 @@ class APIService {
             throw APIError.invalidResponse
         }
 
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.httpError(httpResponse.statusCode, "Export failed")
-        }
+        try validateStatus(httpResponse, data: data)
 
         return data
     }
@@ -271,10 +294,7 @@ class APIService {
                 throw APIError.invalidResponse
             }
 
-            guard (200...299).contains(httpResponse.statusCode) else {
-                let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-                throw APIError.httpError(httpResponse.statusCode, errorMessage)
-            }
+            try validateStatus(httpResponse, data: data)
 
             do {
                 return try decoder.decode(T.self, from: data)
@@ -311,10 +331,7 @@ class APIService {
                 throw APIError.invalidResponse
             }
 
-            guard (200...299).contains(httpResponse.statusCode) else {
-                let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-                throw APIError.httpError(httpResponse.statusCode, errorMessage)
-            }
+            try validateStatus(httpResponse, data: data)
 
             do {
                 return try decoder.decode(U.self, from: data)
@@ -351,10 +368,7 @@ class APIService {
                 throw APIError.invalidResponse
             }
 
-            guard (200...299).contains(httpResponse.statusCode) else {
-                let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-                throw APIError.httpError(httpResponse.statusCode, errorMessage)
-            }
+            try validateStatus(httpResponse, data: data)
 
             do {
                 return try decoder.decode(U.self, from: data)
@@ -384,10 +398,7 @@ class APIService {
                 throw APIError.invalidResponse
             }
 
-            guard (200...299).contains(httpResponse.statusCode) else {
-                let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-                throw APIError.httpError(httpResponse.statusCode, errorMessage)
-            }
+            try validateStatus(httpResponse, data: data)
 
             do {
                 return try decoder.decode(T.self, from: data)

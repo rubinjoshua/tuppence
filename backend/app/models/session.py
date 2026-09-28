@@ -20,16 +20,16 @@ class Session(Base):
         - user_id: Foreign key to users
         - household_id: Foreign key to households (user's active household)
         - created_at: Session creation timestamp
-        - expires_at: Absolute expiration (30 days from creation)
-        - last_activity: Last request timestamp (for sliding window)
+        - expires_at: Expiration, pushed 30 days forward on every request
+        - last_activity: Last request timestamp
 
     Revocation:
         - DELETE FROM sessions WHERE user_id=X AND household_id=Y
         - Immediate revocation, zero vulnerability window
 
     Sliding Window:
-        - Session expires 30 days after last_activity
-        - Each request updates last_activity
+        - Session expires 30 days after the last authenticated request
+        - validate_session() rewrites expires_at on every request
         - Keeps active users logged in indefinitely
     """
 

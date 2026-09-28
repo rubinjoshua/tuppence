@@ -36,6 +36,14 @@ private func isNetworkError(_ error: Error) -> Bool {
     return false
 }
 
+/// A 401 already signed the user out via AuthenticationManager and the app is
+/// swapping to the login screen. Stacking "Failed to load X" on top of that is
+/// the alert spam this suppresses — LoginView shows the one real message.
+private func isSessionExpired(_ error: Error) -> Bool {
+    if case APIError.sessionExpired = error { return true }
+    return false
+}
+
 @MainActor
 class AppViewModel: ObservableObject {
     @Published var budgets: [Budget] = []
@@ -232,7 +240,7 @@ class AppViewModel: ObservableObject {
             // Task (e.g. .refreshable mid-state-update). Treating it as an
             // error spams a misleading alert; the next legitimate load will
             // overwrite the data anyway.
-            if !isCancellation(error) && !isNetworkError(error) {
+            if !isCancellation(error) && !isNetworkError(error) && !isSessionExpired(error) {
                 errorMessage = "Failed to load amounts: \(error.localizedDescription)"
             }
             // Keep the previously cached budgets in the UI on failure so the
@@ -275,7 +283,7 @@ class AppViewModel: ObservableObject {
             serverLedgerEntries = try await apiService.getLedger(month: monthString)
             rebuildDisplayed()
         } catch {
-            if !isCancellation(error) && !isNetworkError(error) {
+            if !isCancellation(error) && !isNetworkError(error) && !isSessionExpired(error) {
                 errorMessage = "Failed to load ledger: \(error.localizedDescription)"
             }
         }
@@ -298,7 +306,7 @@ class AppViewModel: ObservableObject {
             let response = try await apiService.getCategoryMap(month: monthString, budgetEmoji: budgetEmoji)
             categoryData = response.categories
         } catch {
-            if !isCancellation(error) && !isNetworkError(error) {
+            if !isCancellation(error) && !isNetworkError(error) && !isSessionExpired(error) {
                 errorMessage = "Failed to load category map: \(error.localizedDescription)"
             }
         }
@@ -356,7 +364,9 @@ class AppViewModel: ObservableObject {
             await loadAmounts()
             WidgetCenter.shared.reloadAllTimelines()
         } catch {
-            errorMessage = "Failed to delete spending: \(error.localizedDescription)"
+            if !isSessionExpired(error) {
+                errorMessage = "Failed to delete spending: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -396,7 +406,9 @@ class AppViewModel: ObservableObject {
             await loadAmounts()
             WidgetCenter.shared.reloadAllTimelines()
         } catch {
-            errorMessage = "Failed to update spending: \(error.localizedDescription)"
+            if !isSessionExpired(error) {
+                errorMessage = "Failed to update spending: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -410,7 +422,9 @@ class AppViewModel: ObservableObject {
             WidgetCenter.shared.reloadAllTimelines()
             return csvData
         } catch {
-            errorMessage = "Failed to export year: \(error.localizedDescription)"
+            if !isSessionExpired(error) {
+                errorMessage = "Failed to export year: \(error.localizedDescription)"
+            }
             return nil
         }
     }
@@ -445,9 +459,9 @@ class AppViewModel: ObservableObject {
                 )
                 PendingExpenseStore.shared.remove(id: item.id)
             } catch {
-                if isNetworkError(error) {
-                    // Offline / connection dropped — stop trying, wait for
-                    // reachability to come back.
+                if isNetworkError(error) || isSessionExpired(error) {
+                    // Offline, or signed out — stop trying. The entries stay
+                    // queued and upload once we reconnect or sign back in.
                     break
                 }
                 // Server-side error: keep the entry, log it, move on.
