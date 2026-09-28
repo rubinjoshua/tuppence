@@ -21,6 +21,11 @@ ph = PasswordHasher(
 )
 
 
+# Sessions expire this long after the last authenticated request, not after
+# creation - validate_session() pushes expires_at forward on every request.
+SESSION_LIFETIME = timedelta(days=30)
+
+
 def hash_password(password: str) -> str:
     """
     Hash a password using Argon2id.
@@ -74,8 +79,9 @@ def validate_session(db: DBSession, session_id: UUID) -> Optional[Tuple[UUID, UU
         Tuple of (user_id, household_id) if session is valid, None otherwise
 
     Side effects:
-        - Updates session.last_activity (sliding window)
-        - Extends session validity by updating timestamp
+        - Updates session.last_activity
+        - Pushes session.expires_at out to SESSION_LIFETIME from now, so the
+          sliding window actually slides and an active user is never logged out
     """
     from app.models.session import Session
 
@@ -90,8 +96,11 @@ def validate_session(db: DBSession, session_id: UUID) -> Optional[Tuple[UUID, UU
     if session.expires_at <= now:
         return None
 
-    # Update last activity (sliding window - extends session life)
+    # Slide the window forward. Without this the session dies SESSION_LIFETIME
+    # after *creation* no matter how active the user is, which logged people
+    # out every 30 days.
     session.last_activity = now
+    session.expires_at = now + SESSION_LIFETIME
     db.commit()
 
     return (session.user_id, session.household_id)

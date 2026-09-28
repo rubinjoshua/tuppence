@@ -31,6 +31,32 @@ class AuthenticationManager: ObservableObject {
         keychain.upgradeAccessibilityIfNeeded(for: KeychainHelper.Keys.householdId)
         keychain.upgradeAccessibilityIfNeeded(for: KeychainHelper.Keys.householdName)
         checkAuthState()
+
+        // Reaches for the singleton rather than capturing self: the observer
+        // fires long after init returns, and the singleton outlives it anyway.
+        NotificationCenter.default.addObserver(
+            forName: .sessionExpired,
+            object: nil,
+            queue: nil
+        ) { _ in
+            Task { @MainActor in AuthenticationManager.shared.signOutExpiredSession() }
+        }
+    }
+
+    // MARK: - Session Expiry
+
+    /// A 401 from any endpoint means the session is gone. Sign out once and let
+    /// ContentView swap in the login screen, rather than leaving the user in a
+    /// signed-in-looking app where every screen raises its own error.
+    ///
+    /// Also called directly by the App Intents, which may run in a process
+    /// where this observer was never registered. The second guard handles the
+    /// app launching fresh from a Shortcut's "Continue": the keychain is
+    /// already empty, but the login screen should still say why.
+    func signOutExpiredSession() {
+        guard isAuthenticated || errorMessage == nil else { return }
+        logout()
+        errorMessage = APIError.sessionExpired.localizedDescription
     }
 
     // MARK: - Apple Sign In Helpers
@@ -223,7 +249,7 @@ class AuthenticationManager: ObservableObject {
     // MARK: - Logout
 
     func logout() {
-        keychain.deleteAll()
+        _ = keychain.deleteAll()
         isAuthenticated = false
         currentUser = nil
         errorMessage = nil
